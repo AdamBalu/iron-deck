@@ -589,3 +589,149 @@ body.quake #app, body.quake #reveal { animation: quake .6s linear; }
 .fear.on { color: var(--gold); font-weight: 700; }
 .foe-main em.keen { background: var(--gold); }
 .sheet .rules button.swap { display: block; min-height: 0; margin: 6px 0 2px; padding: 8px 12px 7px; border: 0; border-radius: 10px; background: var(--ink); color: var(--paper); font-size: 14px; font-weight: 700; text-align: center; }
+
+/* ===== wide screens: the same table, with room to spread out ===== */
+@media (min-width: 1100px) {
+  #app { max-width: 1260px; padding: 40px 48px 56px 148px; }
+  #app.s-home, #app.s-progress, #app.s-deck, #app.s-hero { padding-bottom: 56px; }
+  /* screens you work through one thing at a time stay a single centred column */
+  #app.s-setup, #app.s-play, #app.s-rest, #app.s-finish, #app.s-settings { max-width: 660px; padding-left: 48px; }
+  #app.s-deal { max-width: 1000px; padding-left: 48px; }
+
+  .brand { font-size: 36px; }
+  .title { font-size: 72px; }
+  .sub { font-size: 17px; max-width: 48ch; }
+  .banner { font-size: 16px; padding: 14px 18px; }
+  .btn { font-size: 32px; padding: 18px 0 15px; }
+  .panel { padding: 8px 22px; }
+  .panel h3 { font-size: 28px; }
+
+  /* the tab bar becomes a rail down the left edge */
+  .tabs { left: 28px; top: 50%; bottom: auto; transform: translateY(-50%); width: 92px; flex-direction: column; padding: 8px; border-radius: 28px; }
+  .tabs button { flex: none; min-height: 76px; font-size: 13.5px; }
+
+  /* table: the deck on the right, everything you read and tap on the left */
+  #app.s-home { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 64px; align-content: center; }
+  #app.s-home > * { grid-column: 1; }
+  #app.s-home > .tabs { grid-column: auto; }
+  #app.s-home .stack-wrap { grid-column: 2; grid-row: 1 / span 12; min-height: 620px; padding: 0; }
+  #app.s-home .stack-wrap::before { width: 560px; height: 560px; }
+  #app.s-home .stack { width: 320px; }
+  #app.s-home .stack .back { border-radius: 28px; padding: 11px; }
+  #app.s-home .stack .back i { border-radius: 18px; }
+  #app.s-home .stack .back.front span { font-size: 116px; }
+  #app.s-home .teaser { text-align: left; font-size: 18px; margin: 30px 0 18px; }
+  #app.s-home .ghost { text-align: left; padding-left: 0; }
+  #app.s-home .foe { margin-top: 16px; padding: 16px 22px 16px 16px; gap: 18px; border-radius: 22px; }
+  #app.s-home .crest { width: 96px; height: 96px; }
+  #app.s-home .crest .boss-art { width: 90px; height: 90px; }
+  #app.s-home .crest i { width: 30px; height: 30px; }
+  #app.s-home .crest i .suit { width: 18px; height: 18px; }
+  #app.s-home .foe-main { gap: 10px; }
+  #app.s-home .foe-main b { font-size: 24px; }
+  #app.s-home .hp { height: 12px; }
+  #app.s-home .fear { font-size: 15px; }
+  #app.s-home .foe-hp { font-size: 40px; }
+
+  /* the dealt hand in two columns */
+  .blocks { grid-template-columns: 1fr 1fr; gap: 22px 28px; align-items: start; }
+  .mini { padding: 16px 18px 15px; }
+  .mini b { font-size: 17.5px; }
+  .mini .tgt { font-size: 25px; }
+  .fight, .bounty { font-size: 16px; max-width: 70ch; }
+  #app.s-deal .dock { position: static; max-width: 440px; margin: 34px auto 0; }
+  #app.s-deal .dock::before { display: none; }
+
+  /* a set: the card gets bigger type, not more things */
+  .face { padding: 34px 36px 32px; border-radius: 32px; flex: none; min-height: 620px; }
+  .face::before { inset: 10px; border-radius: 24px; }
+  .face h2 { font-size: 60px; }
+  .setno, .cue, .beat, .kill, .twist { font-size: 17px; }
+  .target .num { font-size: 124px; }
+  .target small { font-size: 20px; }
+  .reps button { width: 76px; height: 76px; font-size: 36px; }
+  .reps output b { font-size: 66px; }
+  .pip { right: -30px; top: 30%; }
+  .pip .suit { width: 300px; height: 300px; }
+  .dots span { height: 7px; }
+  .foe.compact { padding: 10px 16px 10px 10px; }
+  .foe.compact .crest { width: 50px; height: 50px; }
+  .foe.compact .crest .boss-art { width: 46px; height: 46px; }
+  .foe.compact .foe-main b { font-size: 16px; }
+  .foe.compact .foe-hp { font-size: 26px; }
+  .hit { top: 86px; right: calc(50% - 240px); font-size: 60px; }
+  .poof { top: 150px; left: calc(50% - 300px); }
+  .ring { width: 380px; }
+  .resting .num { font-size: 176px; }
+
+  /* finishing */
+  .cleared { font-size: 104px; }
+  .earn .num { font-size: 60px; }
+  .loot { width: 210px; }
+  .lootface b { font-size: 34px; }
+  .gearloot .lootface .icon-art { width: 110px; height: 110px; }
+  .gearloot .lootface b { font-size: 26px; }
+  .lootback i span { font-size: 72px; }
+
+  /* hero: the model on the left at full size, the whole armoury on the right */
+  #app.s-hero { display: grid; grid-template-columns: 430px minmax(0, 1fr); column-gap: 44px; align-items: start; align-content: start; }
+  #app.s-hero > .top { grid-column: 1 / -1; }
+  #app.s-hero > .tabs { grid-column: auto; }
+  #app.s-hero .stage { grid-column: 1; grid-template-columns: 96px 1fr 96px; gap: 10px; margin-top: 26px; position: sticky; top: 40px; }
+  #app.s-hero .armory { grid-column: 2; margin-top: 26px; padding-bottom: 22px; }
+  .slotcol { gap: 12px; }
+  .slot { width: 96px; height: 96px; border-radius: 20px; }
+  .slot .icon-art { width: 70px; height: 70px; margin-top: -12px; }
+  .slot small { font-size: 12px; bottom: 7px; }
+  .slot.empty small { font-size: 14px; }
+  .pedestal .hero { width: 250px; height: 412px; }
+  .pedestal::before { width: 380px; height: 380px; margin: -190px; }
+  .armory { --rung: clamp(54px, 5.2vw, 72px); }
+  .rung { width: var(--rung); height: var(--rung); border-radius: 15px; }
+  .rung .icon-art { width: calc(var(--rung) - 10px); height: calc(var(--rung) - 10px); }
+  .rungs { gap: 7px; }
+  .rarities span { width: var(--rung); margin-left: 7px; font-size: 12.5px; }
+  .line { padding: 4px 0; }
+  .line > span { font-size: 17px; }
+  .armory .empty { font-size: 16px; }
+
+  /* deck: more cards to a row */
+  .grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 12px; }
+  .dcard { border-radius: 16px; padding: 14px 13px 12px; }
+  .dcard::before { inset: 5px; border-radius: 11px; }
+  .dcard b { font-size: 23px; }
+  .decksuit h3 { font-size: 19px; }
+
+  /* progress: flows in two columns */
+  #app.s-progress { display: block; column-count: 2; column-gap: 44px; }
+  #app.s-progress > .top { column-span: all; margin-bottom: 8px; }
+  #app.s-progress > section { break-inside: avoid; }
+  .tonnage .num { font-size: 108px; }
+  .tonnage p { font-size: 18px; }
+  .suits div { grid-template-columns: 24px 110px 1fr auto 34px; font-size: 17px; }
+  .suits .num { font-size: 28px; }
+
+  /* sheets become dialogs */
+  .sheet { left: 50%; right: auto; top: 50%; bottom: auto; width: 540px; max-width: 540px; margin: 0; border-radius: 28px; padding: 30px 30px 18px; transform: translate(-50%, -50%); animation: dialog .22s var(--ease) both; }
+  .sheet::before { display: none; }
+  @keyframes dialog { from { opacity: 0; transform: translate(-50%, -47%) scale(.96); } }
+  .sheet.info h2 { font-size: 46px; }
+  .foe-art { width: 220px; height: 220px; }
+  .foe-art .boss-art { width: 196px; height: 196px; }
+  .item-art { width: 200px; height: 200px; }
+  .item-art .icon-art { width: 178px; height: 178px; }
+
+  /* the reveal has more room to be loud */
+  .rv-card { width: 210px; height: 288px; margin: -144px -105px; }
+  .rv-prize, .rv-prize .icon-art { width: 320px; height: 320px; }
+  .rv-prize { margin: -160px; }
+  .rv-glow { width: 520px; height: 520px; margin: -260px; }
+  .rv-text { top: calc(var(--mid) + 190px) !important; }
+  .rv-text h2 { font-size: 64px; }
+  .rv-text .rar { font-size: 28px; }
+  .rv-text p { font-size: 18px; }
+  .shout { font-size: 84px; }
+  .shout.long { font-size: 56px; }
+  .downed { width: 240px; height: 240px; }
+  .downed .boss-art { width: 210px; height: 210px; }
+}
