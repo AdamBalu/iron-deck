@@ -7,7 +7,9 @@ Dumbbell workouts dealt as a hand of cards, fresh every time. Built for a bench 
 - The app picks weights and reps so every card asks for a little more than last time.
 - Nothing can be lost: no streaks, only points, levels and records that go up.
 - Every hand ends with a reward card: a new exercise, a new twist, or a new look.
-- Every 12 hands a new season changes the rep ranges, the hand styles and the colours.
+- Each new season changes the rep ranges, the hand styles and the colours.
+- Every set you log is a hit on the current boss. Records are critical hits, and a boss never heals.
+- Three bosses make a season. Beating them drops gear and combos; finishing a season boss with a record wins a legendary.
 - Each hand has an optional bounty for extra points. Missing it costs nothing.
 - The progress screen shows how much stronger you are than in your first sessions.
 

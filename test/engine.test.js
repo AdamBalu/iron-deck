@@ -234,18 +234,6 @@ test('stopping early still pays for the sets done; a hand needs three sets to co
   assert.equal(s.hands, 1);
 });
 
-test('the twelfth hand opens season two with a new style and a new look', () => {
-  const s = setup();
-  const rng = mulberry32(8);
-  let last;
-  assert.equal(seasonInfo(s).n, 1);
-  for (let i = 0; i < 12; i++) last = fullRound(s, rng, T0 + i * 2 * DAY).summary;
-  assert.equal(seasonInfo(s).n, 2);
-  assert.equal(last.newSeason.name, 'Heavy metal');
-  assert.ok(s.unlocked.styles.includes('heavy'));
-  assert.ok(s.unlocked.themes.includes('forge'));
-  assert.equal(s.settings.theme, 'forge');
-});
 
 test('a year of hands never breaks: every hand stays legal as the deck and seasons grow', () => {
   const s = setup();
@@ -453,4 +441,221 @@ test('each lift keeps a short log of its best set per session for charting', () 
   const logged = Object.values(s.lifts).filter(l => l.log?.length >= 2);
   assert.ok(logged.length > 3, 'several lifts should have two or more sessions logged');
   for (const l of logged) for (const p of l.log) assert.ok(p.at && p.r > 0 && p.w >= 0);
+});
+
+// ----- third round: bosses, hero, gear, combos -----
+import { migrate, foeInfo, power, weapon } from '../js/engine.js';
+
+// A tiny hand with exactly the given cards, one set each, for checking single hits.
+function tinyHand(cards) {
+  return {
+    mode: 'full', style: 'pairs', blocks: [{ cards: cards.map(c => ({ key: c.ex, w: 0, reps: 10, lo: 8, hi: 12, mod: null, boss: false, sets: [], ...c })), rounds: 1, rest: 0 }],
+    steps: cards.map((_, i) => ({ b: 0, c: i, round: 0 })), i: 0, done: false, mult: 1,
+  };
+}
+const notWeak = (s, ...suits) => { while (suits.includes(foeInfo(s.foe.k).weak)) s.foe = { k: s.foe.k + 1, hp: 5000, max: 5000 }; s.foe.hp = s.foe.max = 5000; };
+
+test('a new game starts with a boss at full health, and an older save gets one on load', () => {
+  const s = setup();
+  assert.ok(s.foe.max > 0);
+  assert.equal(s.foe.hp, s.foe.max);
+  assert.ok(foeInfo(s.foe.k).name);
+  const old = setup();
+  delete old.foe; delete old.foesDown; delete old.gear; delete old.unlocked.combos;
+  old.hands = 9;
+  migrate(old);
+  assert.equal(old.foe.hp, old.foe.max);
+  assert.equal(old.foesDown, 2, 'nine hands already played is worth two bosses');
+  assert.equal(seasonInfo(old).n, 1);
+  assert.deepEqual(old.unlocked.combos, []);
+});
+
+test('every set is a hit: it takes health off the boss, and a set of zero reps does nothing', () => {
+  const s = setup();
+  notWeak(s, 'chest');
+  const hand = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'fly', w: 10 }]);
+  const a = logSet(s, hand, 10, T0);
+  assert.equal(a.dmg, power(s, 'chest'));
+  assert.equal(s.foe.hp, 5000 - a.dmg);
+  const b = logSet(s, hand, 0, T0);
+  assert.equal(b.dmg, 0);
+  assert.equal(s.foe.hp, 5000 - a.dmg);
+});
+
+test('a record is a critical hit, the finisher hits double, and the weak suit takes half again', () => {
+  const s = setup();
+  notWeak(s, 'chest');
+  const base = power(s, 'chest');
+  s.lifts['bench-press'] = { w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] };
+  const crit = logSet(s, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0);
+  assert.equal(crit.crit, true);
+  assert.equal(crit.dmg, base * 2 + weapon(s).crit);
+  const fin = logSet(s, tinyHand([{ ex: 'push-up', key: 'push-up:allout', boss: true, reps: null }]), 20, T0);
+  assert.equal(fin.dmg, base * 2);
+  const weak = foeInfo(s.foe.k).weak;
+  const ex = Object.values(EX).find(e => e.suit === weak);
+  const w = logSet(s, tinyHand([{ ex: ex.id }]), 10, T0);
+  assert.equal(w.dmg, Math.round(power(s, weak) * 1.5));
+});
+
+test('gear and suit levels make that suit hit harder; the dumbbell upgrades with kilos lifted', () => {
+  const s = setup();
+  assert.equal(power(s, 'back'), 10);
+  s.gear.back = 2;
+  assert.equal(power(s, 'back'), 16);
+  s.suitXp.back = 400; // level 4
+  assert.equal(power(s, 'back'), 19);
+  assert.equal(weapon(s).tier, 0);
+  s.tonnage = 16000;
+  assert.equal(weapon(s).tier, 2);
+  assert.ok(weapon(s).crit > 0);
+  assert.ok(weapon(s).next.at > 16000);
+});
+
+test('a combo only lands once you own it: push-pull pays when chest and back sets are back to back', () => {
+  const s = setup();
+  notWeak(s, 'chest', 'back');
+  const cards = [{ ex: 'bench-press', w: 20 }, { ex: 'one-arm-row', w: 20 }];
+  let hand = tinyHand(cards);
+  logSet(s, hand, 10, T0);
+  assert.deepEqual(logSet(s, hand, 10, T0).combos, []);
+  s.unlocked.combos.push('pushpull');
+  hand = tinyHand(cards);
+  logSet(s, hand, 10, T0);
+  const hit = logSet(s, hand, 10, T0);
+  assert.deepEqual(hit.combos, ['pushpull']);
+  assert.ok(hit.dmg > power(s, 'back'));
+});
+
+test('beating a boss brings the next one at full health, and undo takes the kill back', () => {
+  const s = setup();
+  s.foe.hp = 5;
+  const first = foeInfo(s.foe.k).name;
+  const hand = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'fly', w: 10 }]);
+  const hit = logSet(s, hand, 10, T0);
+  assert.equal(hit.foeDown.name, first);
+  assert.equal(s.foesDown, 1);
+  assert.equal(s.foe.k, 1);
+  assert.equal(s.foe.hp, s.foe.max);
+  assert.equal(undoSet(s, hand), true);
+  assert.equal(s.foesDown, 0);
+  assert.equal(s.foe.k, 0);
+  assert.equal(s.foe.hp, 5);
+});
+
+test('the hand that beats a boss pays bonus points and an extra reward of gear or a combo', () => {
+  const s = setup();
+  const rng = mulberry32(17);
+  s.foe.hp = 30;
+  const hand = dealHand(s, 'full', rng, T0);
+  play(s, hand, T0);
+  const xpBefore = s.xp;
+  const sum = finishHand(s, hand, rng, T0);
+  assert.equal(sum.foe.downs.length, 1);
+  assert.ok(sum.foe.downs[0].reward > 0);
+  assert.equal(s.xp - xpBefore, sum.xp + sum.foe.downs[0].reward);
+  assert.ok(sum.loot.some(l => l.type === 'gear' || l.type === 'combo'), JSON.stringify(sum.loot));
+  assert.ok(sum.foe.dmg > 0);
+  assert.equal(sum.foe.now.hp, s.foe.hp);
+});
+
+test('a boss never heals: months away change nothing', () => {
+  const s = setup();
+  const rng = mulberry32(18);
+  fullRound(s, rng, T0);
+  const hp = s.foe.hp;
+  assert.ok(hp < s.foe.max);
+  dealHand(s, 'full', rng, T0 + 200 * DAY);
+  assert.equal(s.foe.hp, hp);
+});
+
+test('three bosses make a season: the first falls in a few hands and season two opens around the twelfth', () => {
+  const s = setup();
+  const rng = mulberry32(8);
+  let hands = 0, last, firstDown = null;
+  while (seasonInfo(s).n === 1 && hands < 30) {
+    last = fullRound(s, rng, T0 + hands * 2 * DAY).summary;
+    hands++;
+    if (firstDown == null && s.foesDown >= 1) firstDown = hands;
+  }
+  assert.ok(firstDown >= 3 && firstDown <= 5, `first boss fell on hand ${firstDown}`);
+  assert.ok(hands >= 9 && hands <= 16, `season two opened after ${hands} hands`);
+  assert.equal(s.foesDown, 3);
+  assert.equal(foeInfo(2).big, true);
+  assert.equal(last.newSeason.name, 'Heavy metal');
+  assert.ok(s.unlocked.styles.includes('heavy'));
+  assert.ok(s.unlocked.themes.includes('forge'));
+  assert.equal(s.settings.theme, 'forge');
+});
+
+test('bosses keep pace with a growing hero: late bosses still take a few hands, not one and not ten', () => {
+  const s = setup();
+  const rng = mulberry32(77);
+  const lifter = mulberry32(5);
+  const perBoss = [];
+  let since = 0;
+  for (let i = 0; i < 120; i++) {
+    const before = s.foesDown;
+    // a realistic lifter: meets the target about two sets in three, so records and critical hits are common
+    fullRound(s, rng, T0 + i * 2 * DAY, 'full', (st) => Math.max(1, (st.card.reps ?? 12) - (lifter() < 0.35 ? 1 : 0)));
+    since++;
+    if (s.foesDown > before) { perBoss.push(since); since = 0; }
+  }
+  const late = perBoss.slice(-8);
+  for (const n of late) assert.ok(n >= 2 && n <= 8, `a late boss took ${n} hands: ${perBoss}`);
+});
+
+import { forecast } from '../js/engine.js';
+
+test('finishing a season boss with a record wins a legendary; any other final blow does not', () => {
+  const bench = () => ({ w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] });
+  const a = setup();
+  a.foe = { k: 2, hp: 5, max: 1370 }; // the season boss
+  a.lifts['bench-press'] = bench();
+  const handA = tinyHand([{ ex: 'bench-press', w: 20 }]);
+  const crit = logSet(a, handA, 9, T0);
+  assert.ok(crit.foeDown.legend, 'expected a legendary');
+  assert.deepEqual(a.legends, [crit.foeDown.legend]);
+  assert.equal(undoSet(a, handA), true);
+  assert.deepEqual(a.legends, [], 'undo hands the legendary back');
+
+  const b = setup();
+  b.foe = { k: 2, hp: 5, max: 1370 };
+  const plain = logSet(b, tinyHand([{ ex: 'bench-press', w: 20 }]), 10, T0);
+  assert.equal(plain.foeDown.legend, null, 'no record, no legendary');
+
+  const c = setup();
+  c.foe.hp = 5; // a smaller boss
+  c.lifts['bench-press'] = bench();
+  const small = logSet(c, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0);
+  assert.equal(small.record, true);
+  assert.equal(small.foeDown.legend, null, 'smaller bosses carry no legendary');
+});
+
+test('the forecast adds up a hand before it is played: weak-spot cards and the combos it is sure to land', () => {
+  const s = setup();
+  let k = 0;
+  while (foeInfo(k).weak !== 'chest') k++;
+  s.foe = { k, hp: 5000, max: 5000 };
+  s.unlocked.combos.push('pushpull');
+  const f = forecast(s, tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'one-arm-row', w: 20 }, { ex: 'fly', w: 10 }]));
+  assert.equal(f.weak, 2);
+  assert.deepEqual(f.combos, ['pushpull']);
+  assert.equal(f.dmg, 15 + (10 + 8) + (15 + 8));
+  assert.equal(s.foe.hp, 5000, 'forecasting must not touch the boss');
+});
+
+import { nextHit } from '../js/engine.js';
+
+test('the next-hit preview matches what the set then does, plain and as a record', () => {
+  const s = setup();
+  notWeak(s, 'chest');
+  s.lifts['bench-press'] = { w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] };
+  const hand = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'fly', w: 10 }]);
+  const peek = nextHit(s, hand);
+  assert.equal(peek.plain, power(s, 'chest'));
+  assert.equal(peek.weak, false);
+  assert.equal(logSet(s, hand, 9, T0).dmg, peek.crit);
+  assert.equal(nextHit(s, hand).plain, logSet(s, hand, 10, T0).dmg);
+  assert.equal(nextHit(s, hand), null);
 });

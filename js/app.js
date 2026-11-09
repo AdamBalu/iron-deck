@@ -1,5 +1,5 @@
 // Screens and interaction. All workout rules live in engine.js.
-import { SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES } from './data.js';
+import { SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES, COMBOS, GEAR, GEAR_STEP, LEGENDS } from './data.js';
 import * as E from './engine.js';
 
 const KEY = 'irondeck.v1';
@@ -10,7 +10,7 @@ const now = () => Date.now();
 const HOUR = 3600000, DAY = 86400000;
 
 function load() {
-  try { const raw = localStorage.getItem(KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 1 ? s : null; }
+  try { const raw = localStorage.getItem(KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 1 ? E.migrate(s) : null; }
   catch { return null; }
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage full or blocked: keep playing */ } }
@@ -67,7 +67,7 @@ const videoLink = (ex) => `<a class="video" href="${videoUrl(ex)}" target="_blan
 
 function bountyText(b) {
   if (b.type === 'records') return b.n === 1 ? 'set a new record' : `set ${b.n} new records`;
-  if (b.type === 'boss') return `beat ${b.n} on the boss card`;
+  if (b.type === 'boss') return `beat ${b.n} on the finisher`;
   return 'play every card to the end';
 }
 
@@ -119,23 +119,35 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && S?.current && (ui.screen === 'play' || ui.screen === 'rest')) keepAwake(true);
 });
 
-function celebrate(text) {
+let fxToken = 0;
+function showFx(html, ms) {
+  const mine = ++fxToken;
+  $fx.innerHTML = html;
+  setTimeout(() => { if (mine === fxToken) $fx.innerHTML = ''; }, ms);
+}
+
+function celebrate(text, sub = '', hold = 1300) {
   const colors = SUIT_ORDER.map(s => SUITS[s].color);
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let html = `<div class="shout">${text}</div>`;
+  let html = `<div class="shout ${text.length > 14 ? 'long' : ''}">${text}${sub ? `<small>${sub}</small>` : ''}</div>`;
   if (!calm) {
     for (let i = 0; i < 34; i++) {
       const a = Math.random() * Math.PI * 2, d = 90 + Math.random() * 190;
       html += `<i class="bit" style="--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d - 60}px;--rot:${Math.random() * 720 - 360}deg;background:${colors[i % colors.length]};animation-delay:${Math.random() * 90}ms"></i>`;
     }
   }
-  $fx.innerHTML = html;
-  setTimeout(() => { $fx.innerHTML = ''; }, 1300);
+  showFx(html, hold);
+}
+
+// The damage number that flies off a set.
+function hitPop(res) {
+  if (!res.dmg) return;
+  const notes = [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : [])];
+  showFx(`<div class="hit">${res.dmg}${notes.length ? `<small>${notes.join(' + ')}</small>` : ''}</div>`, 950);
 }
 
 function toast(text) {
-  $fx.innerHTML = `<div class="toast">${text}</div>`;
-  setTimeout(() => { $fx.innerHTML = ''; }, 1800);
+  showFx(`<div class="toast">${text}</div>`, 1800);
 }
 
 // ---------- screens ----------
@@ -173,6 +185,18 @@ function setupScreen() {
     <button class="btn" data-act="setup-go">Deal my first hand</button>`;
 }
 
+function foeStrip({ compact = false, exposed = false } = {}) {
+  const info = E.foeInfo(S.foe.k);
+  const pct = Math.max(0, Math.round(S.foe.hp / S.foe.max * 100));
+  const from = ui.foeShown?.k === S.foe.k ? ui.foeShown.pct : 100;
+  ui.foeShown = { k: S.foe.k, pct };
+  return `<button class="foe ${info.big ? 'big' : ''} ${compact ? 'compact' : ''}" data-act="foe-info" aria-label="About this boss">
+    <span class="crest">${suitIcon(info.weak, compact ? 15 : 20)}</span>
+    <span class="foe-main"><b>${info.name}${exposed ? '<em>Weak spot</em>' : ''}</b><span class="hp"><i style="width:${from}%" data-w="${pct}"></i></span></span>
+    <span class="foe-hp num">${num(Math.max(0, S.foe.hp))}</span>
+  </button>`;
+}
+
 function ensurePending() {
   const p = S.pending;
   if (!p || now() - p.createdAt > 3 * HOUR || p.mult !== E.multiplier(S, now())) {
@@ -199,7 +223,7 @@ function homeScreen() {
     if (!S.hands) banner = 'Your first hand sets your starting numbers. If a weight feels wrong, tap it and change it.';
     else if (p.mult === 2) banner = `Welcome back. ${away} days away earns you <strong>double points</strong> on this hand.`;
     else if (p.mult > 1) banner = 'The deck is still warm. Playing again this soon earns <strong>25% more points</strong>.';
-    else banner = `Season ${season.n}, ${season.name}. ${season.handsLeft} ${season.handsLeft === 1 ? 'hand' : 'hands'} until the next season opens.`;
+    else banner = `Season ${season.n}, ${season.name}. ${season.left === 1 ? 'One boss' : `${season.left} bosses`} to beat before ${season.next.name} opens.`;
     const names = p.suits.slice(0, 2).map(s => suitName(s).toLowerCase());
     teaser = `Up next: <b>${listWords(names)}</b>, ${E.handCards(p).length} cards, about ${p.estMin} min`;
     main = `<button class="btn" data-act="deal" data-mode="full">Deal me in</button>`;
@@ -213,6 +237,7 @@ function homeScreen() {
       <button class="chip" data-act="tab" data-to="progress">Level ${level}</button>
     </header>
     <p class="banner">${banner}</p>
+    ${foeStrip()}
     <div class="stack-wrap"><div class="stack">
       <div class="back" style="--c:${c2}"><i></i></div>
       <div class="back" style="--c:${c1}"><i></i></div>
@@ -224,8 +249,10 @@ function homeScreen() {
     ${ui.install ? '<button class="ghost small" data-act="install">Add Iron Deck to your home screen</button>' : ''}`;
 }
 
+const RESHUFFLES = 3; // enough to dodge a hand you dislike, not enough to stall on
+
 function blockLabel(b) {
-  if (b.boss) return 'Boss card, one all-out set';
+  if (b.boss) return 'Finisher, one all-out set';
   const mod = b.cards[0].mod;
   if (mod === 'restpause') return 'Three sets, 15-second breathers';
   if (b.cards.length === 1) return `${b.rounds} sets${b.lead ? ', long rests' : ''}`;
@@ -254,6 +281,12 @@ function dealScreen() {
     return `<section class="block ${b.boss ? 'boss' : ''} ${b.cards.length > 1 ? 'joined' : ''}">
       <h3><span>${blockLabel(b)}</span>${load}</h3><ul>${rows}</ul></section>`;
   }).join('');
+  const f = E.forecast(S, h);
+  const foe = E.foeInfo(S.foe.k);
+  const fight = `<p class="fight">${suitIcon(foe.weak, 14)} Against <b>${foe.name}</b> this hand hits for about <b>${num(f.dmg)}</b>${
+    f.weak ? `, with ${f.weak === 1 ? 'one card' : `${f.weak} cards`} on its weak spot` : ''}${
+    f.combos.length ? `. Sets up ${listWords(f.combos.map(id => COMBOS[id].name))}` : ''}.</p>`;
+  const left = Math.max(0, RESHUFFLES - (S.reshuffles ?? 0));
   function state(c) { return c.first && S.hands ? '<em class="new">New to you</em>' : c.bumpedFrom != null ? '<em class="new">Heavier than last time</em>' : ''; }
   return `
     <header class="top">
@@ -261,13 +294,14 @@ function dealScreen() {
       <span class="chip plain">${E.handCards(h).length} cards, about ${h.estMin} min</span>
     </header>
     <h1 class="title">${h.mode === 'quick' ? 'Quick hand' : style.name}</h1>
-    <p class="sub">${h.mode === 'quick' ? 'Two cards and a boss. In and out.' : style.how}${h.mult > 1 ? ` Points on this hand are ${h.mult === 2 ? 'doubled' : 'up 25%'}.` : ''}</p>
+    <p class="sub">${h.mode === 'quick' ? 'Two cards and a finisher. In and out.' : style.how}${h.mult > 1 ? ` Points on this hand are ${h.mult === 2 ? 'doubled' : 'up 25%'}.` : ''}</p>
     ${h.bounty ? `<p class="bounty ${h.bounty.gold ? 'gold' : ''}"><b>${h.bounty.gold ? 'Golden bounty' : 'Bounty'}</b> ${bountyText(h.bounty)} for ${h.bounty.reward} extra points</p>` : ''}
+    ${fight}
     <div class="blocks">${blocks}</div>
     <p class="warm">Warm up first: ten easy push-ups and some arm circles.</p>
     <div class="dock">
       <button class="btn" data-act="start">Start</button>
-      <button class="ghost" data-act="reshuffle">Reshuffle</button>
+      ${left ? `<button class="ghost" data-act="reshuffle">Reshuffle, ${left} left</button>` : '<p class="ghost off">No reshuffles left for this hand</p>'}
     </div>`;
 }
 
@@ -308,7 +342,7 @@ function playScreen() {
   const dots = hand().steps.map((_, i) => `<span class="${i < st.index ? 'done' : i === st.index ? 'now' : ''}"></span>`).join('');
   const timed = ex.kind === 'time';
   const withWho = st.partners.length ? `, back to back with ${listWords(st.partners.map(p => EX[p.ex].name.toLowerCase()))}` : '';
-  const setLine = (c.boss ? 'Boss card. One set, everything you have.' : `Set ${st.setNo} of ${st.setsTotal}${withWho}`) +
+  const setLine = (c.boss ? 'The finisher. One set, everything you have.' : `Set ${st.setNo} of ${st.setsTotal}${withWho}`) +
     (ex.side ? (c.boss ? ' Count each side.' : '. Reps are for each side') : '');
 
   let target;
@@ -324,6 +358,16 @@ function playScreen() {
       <button data-act="w" data-d="-1">− ${kg(S.settings.step)} kg</button>
       <button data-act="w" data-d="1">+ ${kg(S.settings.step)} kg</button>
     </div>` : '';
+  const nh = E.nextHit(S, hand());
+  const foe = E.foeInfo(S.foe.k);
+  let kill = '';
+  // A record is only possible on a card you have played before.
+  const canRecord = (S.lifts[c.key]?.sessions ?? 0) > 0;
+  if (nh && (S.foe.hp <= nh.plain || (canRecord && S.foe.hp <= nh.crit))) {
+    const legendLeft = foe.big && Object.keys(LEGENDS).some(id => !S.legends.includes(id));
+    kill = `<p class="kill"><b>${foe.name}</b> has ${num(S.foe.hp)} health left. ${S.foe.hp <= nh.plain ? 'This set finishes it.' : 'A record on this set finishes it.'}${
+      legendLeft && canRecord ? ' Land the final blow as a record and a legendary is yours.' : ''}</p>`;
+  }
   const mod = c.mod && MODS[c.mod] ? `<p class="twist"><b>${MODS[c.mod].name}.</b> ${MODS[c.mod].how}</p>` : '';
 
   let entry;
@@ -344,9 +388,10 @@ function playScreen() {
       <div class="dots">${dots}</div>
       <button class="icon" data-act="menu" aria-label="More options">${ICON.more}</button>
     </header>
+    ${foeStrip({ compact: true, exposed: !!nh?.weak })}
     <article class="face ${c.boss ? 'bossface' : ''}">
       <div class="pip">${suitIcon(ex.suit, 190)}</div>
-      <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Boss card' : `${suitName(ex.suit)} card`}</span>
+      <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Finisher' : `${suitName(ex.suit)} card`}</span>
         <button class="how" data-act="toggle-cue">${ui.cue ? 'Hide tips' : 'How to do it'}</button></div>
       <h2>${ex.name}</h2>
       <p class="setno">${setLine}</p>
@@ -355,6 +400,7 @@ function playScreen() {
       ${target}
       ${adjust}
       <p class="beat">${beatLine(c)}</p>
+      ${kill}
       <div class="entry">${entry}</div>
     </article>`;
 }
@@ -369,6 +415,7 @@ function restScreen() {
       <div class="dots">${hand().steps.map((_, i) => `<span class="${i < st.index ? 'done' : i === st.index ? 'now' : ''}"></span>`).join('')}</div>
       <button class="icon" data-act="menu" aria-label="More options">${ICON.more}</button>
     </header>
+    ${foeStrip({ compact: true })}
     <div class="resting">
       <div class="ring">
         <svg viewBox="0 0 200 200" aria-hidden="true">
@@ -400,6 +447,11 @@ function lootCard(item, i) {
   } else if (item.type === 'theme') {
     tag = 'New look'; big = THEMES[item.id].name;
     sub = S.settings.theme === item.id ? 'You are wearing it now.' : `<button class="wear" data-act="wear" data-theme="${item.id}">Wear it now</button>`;
+  } else if (item.type === 'gear') {
+    tag = item.tier > 1 ? 'Gear upgrade' : 'New gear'; big = `${GEAR[item.suit]}${item.tier > 1 ? ` ${'I'.repeat(item.tier)}` : ''}`;
+    sub = `${suitIcon(item.suit, 14)} ${suitName(item.suit).toLowerCase()} sets now hit ${GEAR_STEP * item.tier} harder`;
+  } else if (item.type === 'combo') {
+    tag = 'New combo'; big = COMBOS[item.id].name; sub = `${COMBOS[item.id].how} Worth ${COMBOS[item.id].bonus} extra damage.`;
   } else {
     tag = 'Jackpot'; big = `+${item.amount}`; sub = 'bonus points, just because';
   }
@@ -423,7 +475,7 @@ function finishScreen() {
       <small>Season ${m.newSeason.n} is open</small><b>${m.newSeason.name}</b>
       <p>${m.newSeason.blurb} The table has a new look to match.</p></section>` : '';
   const loot = m.loot.length ? `<section class="loots">
-      <h3>${m.loot.length > 1 ? 'Double drop. Two cards for you.' : 'A card for you.'}</h3>
+      <h3>${m.loot.length === 1 ? 'A card for you.' : m.foe.downs.length ? 'Your card, and what the boss dropped.' : 'Double drop. Two cards for you.'}</h3>
       <div class="lootrow">${m.loot.map(lootCard).join('')}</div></section>`
     : '<p class="sub center">Play three sets or more and every hand ends with a reward card.</p>';
   return `
@@ -435,6 +487,10 @@ function finishScreen() {
     </div>
     <p class="facts">${m.sets} ${m.sets === 1 ? 'set' : 'sets'}, ${num(m.kg)} kg lifted${m.minutes ? `, ${m.minutes} min` : ''}${m.level.to > m.level.from ? `. You are now <b>level ${m.level.to}</b>` : ''}</p>
     ${m.bounty?.won ? `<p class="bounty won ${m.bounty.gold ? 'gold' : ''}"><b>${m.bounty.gold ? 'Golden bounty won' : 'Bounty won'}</b> ${m.bounty.reward} extra points: you managed to ${bountyText(m.bounty)}</p>` : ''}
+    ${m.foe.downs.map(d => `<section class="seasoncard down">
+      <small>${d.big ? 'Season boss beaten' : 'Boss beaten'}</small><b>${d.name}</b>
+      <p>${d.reward} bonus points and a drop from its pockets.${d.legend ? ` You finished it with a record, so <strong>${LEGENDS[d.legend].name}</strong> is yours: ${LEGENDS[d.legend].how.toLowerCase()}` : ''}</p></section>`).join('')}
+    <div class="foe-report"><small>${m.foe.downs.length ? 'Next in line' : `This hand hit for ${num(m.foe.dmg)}`}</small>${foeStrip()}</div>
     ${season}
     <section class="lvls">${ups}</section>
     ${loot}
@@ -481,7 +537,7 @@ function progressScreen() {
     <section class="overall">
       <p><span>Level ${lv.level}</span><span>${num(lv.span - lv.into)} points to level ${lv.level + 1}</span></p>
       <div class="bar"><i style="width:${Math.round(lv.into / lv.span * 100)}%"></i></div>
-      <p class="trio"><span><b>${S.hands}</b> hands played</span><span><b>${S.records}</b> records</span><span><b>${S.unlocked.exercises.length}</b> cards</span></p>
+      <p class="trio"><span><b>${S.hands}</b> hands played</span><span><b>${S.records}</b> records</span><span><b>${S.foesDown}</b> bosses beaten</span></p>
     </section>
     <section class="suits">${suits}</section>
     <section class="panel dark">
@@ -490,8 +546,8 @@ function progressScreen() {
     </section>
     <section class="panel dark">
       <h3>Season ${season.n}, ${season.name}</h3>
-      <div class="pips">${Array.from({ length: 12 }, (_, i) => `<span class="${i < season.handsIn ? 'on' : ''}"></span>`).join('')}</div>
-      <p class="empty">${season.handsLeft} ${season.handsLeft === 1 ? 'hand' : 'hands'} until ${season.next.name} opens. ${season.next.blurb}</p>
+      <div class="pips">${Array.from({ length: 3 }, (_, i) => `<span class="${i < season.beaten ? 'on' : ''}"></span>`).join('')}</div>
+      <p class="empty">${season.left === 1 ? 'One boss' : `${season.left} bosses`} to beat before ${season.next.name} opens. ${season.next.blurb}</p>
     </section>
     ${recent ? `<section class="panel dark"><h3>Recent hands</h3><ul class="recent">${recent}</ul></section>` : ''}`;
 }
@@ -513,12 +569,28 @@ function deckScreen() {
     ? `<li><b>${m.name}</b><span>${m.how}</span></li>` : '<li class="locked"><b>Locked twist</b><span>Drops from a reward card.</span></li>').join('');
   const styles = Object.entries(STYLES).map(([id, st]) => S.unlocked.styles.includes(id)
     ? `<li><b>${st.name}</b><span>${st.how}</span></li>` : '<li class="locked"><b>Locked hand style</b><span>Opens with a new season.</span></li>').join('');
+  const more = (n, one, many, how) => (n > 0 ? `<li class="locked"><b>${n} ${n === 1 ? one : many} still to find</b><span>${how}</span></li>` : '');
+  const w = E.weapon(S);
+  const roman = (n) => (n > 1 ? ` ${'I'.repeat(n)}` : '');
+  const gear = `<li><b>${w.name}</b><span>Your weapon. ${w.crit ? `Records hit ${w.crit} harder.` : 'It upgrades as your lifetime kilos climb.'}${w.next ? ` ${w.next.name} at ${num(w.next.at)} kg lifted.` : ''}</span></li>` +
+    SUIT_ORDER.filter(s => S.gear[s]).map(s =>
+      `<li><b>${suitIcon(s, 14)} ${GEAR[s]}${roman(S.gear[s])}</b><span>${suitName(s)} sets hit ${GEAR_STEP * S.gear[s]} harder.${S.gear[s] < 3 ? ' Can be upgraded.' : ''}</span></li>`).join('') +
+    more(SUIT_ORDER.filter(s => !S.gear[s]).length, 'piece', 'pieces', 'Every boss you beat drops gear.');
+  const combos = Object.entries(COMBOS).filter(([id]) => S.unlocked.combos.includes(id))
+    .map(([, c]) => `<li><b>${c.name}</b><span>${c.how} Worth ${c.bonus} extra damage.</span></li>`).join('') +
+    more(Object.keys(COMBOS).length - S.unlocked.combos.length, 'combo', 'combos', 'They drop from reward cards and bosses, and land by themselves once you own them.');
+  const legends = Object.entries(LEGENDS).filter(([id]) => S.legends.includes(id))
+    .map(([, l]) => `<li><b>${l.name}</b><span>${l.how}</span></li>`).join('') +
+    more(Object.keys(LEGENDS).length - S.legends.length, 'legendary', 'legendaries', 'Land the final blow on a season boss as a record to claim one.');
   return `
     <header class="top">
       <span class="brand">Your deck</span>
       <span class="chip plain">${S.unlocked.exercises.filter(id => possible.some(e => e.id === id)).length} of ${possible.length} cards</span>
     </header>
     ${suits}
+    <section class="panel dark"><h3>Gear</h3><ul class="rules">${gear}</ul></section>
+    <section class="panel dark"><h3>Combos</h3><ul class="rules">${combos}</ul></section>
+    <section class="panel dark"><h3>Legendaries</h3><ul class="rules">${legends}</ul></section>
     <section class="panel dark"><h3>Twists</h3><ul class="rules">${twist}</ul></section>
     <section class="panel dark"><h3>Hand styles</h3><ul class="rules">${styles}</ul></section>`;
 }
@@ -603,6 +675,24 @@ function sheetView() {
       <button class="quiet" data-act="close-sheet">Keep going</button>
     </div>`;
   }
+  if (ui.sheet === 'foe') {
+    const info = E.foeInfo(S.foe.k);
+    const pct = Math.max(0, Math.round(S.foe.hp / S.foe.max * 100));
+    return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info" role="dialog" aria-label="${info.name}">
+      <p class="corner">${suitIcon(info.weak, 18)}<span>${info.big ? 'Season boss' : 'Boss'}, weak to ${suitName(info.weak).toLowerCase()}</span></p>
+      <h2>${info.name}</h2>
+      <p class="taunt">“${info.taunt}”</p>
+      <div class="hp tall"><i style="width:${pct}%"></i></div>
+      <p class="muted"><b>${num(Math.max(0, S.foe.hp))}</b> of ${num(S.foe.max)} health left. It never heals, however long you are away.</p>
+      <ul class="rules ink">
+        <li><b>Every set you log is a hit</b><span>Higher suit levels and gear hit harder. ${suitName(info.weak)} sets hit this one half again as hard.</span></li>
+        <li><b>A record is a critical hit</b><span>Double damage. The finisher at the end of a hand hits double too.</span></li>
+        <li><b>Combos land by themselves</b><span>Play the pattern and the bonus is added. Your combos are listed in your deck.</span></li>
+        ${info.big ? '<li><b>Legendary at stake</b><span>Land the final blow on a season boss as a record and you win a legendary.</span></li>' : ''}
+      </ul>
+      <button class="quiet" data-act="close-sheet">Close</button>
+    </div>`;
+  }
   if (ui.sheet?.card) {
     const ex = EX[ui.sheet.card];
     const l = S.lifts[ex.id];
@@ -633,10 +723,8 @@ function render() {
   applyTheme();
   $app.className = `s-${ui.screen}${ui.enter ? ' enter' : ''}`;
   $app.innerHTML = SCREENS[ui.screen]() + (WITH_TABS.includes(ui.screen) ? navBar() : '') + sheetView();
-  if (ui.screen === 'finish') {
-    requestAnimationFrame(() => $app.querySelectorAll('.bar i[data-w]').forEach(el => { el.style.width = `${el.dataset.w}%`; }));
-    if (ui.enter) countUp();
-  }
+  requestAnimationFrame(() => $app.querySelectorAll('i[data-w]').forEach(el => { el.style.width = `${el.dataset.w}%`; }));
+  if (ui.screen === 'finish' && ui.enter) countUp();
   ui.enter = false;
 }
 function go(screen) {
@@ -707,6 +795,7 @@ function endRest(chime) {
 function finishNow() {
   const h = S.current ?? ui.hand;
   const summary = E.finishHand(S, h, rng, now());
+  S.reshuffles = 0;
   save();
   keepAwake(false);
   if (!summary.sets) return go('home');
@@ -750,9 +839,12 @@ const actions = {
     go('deal');
   },
   reshuffle() {
+    if ((S.reshuffles ?? 0) >= RESHUFFLES) return;
+    S.reshuffles = (S.reshuffles ?? 0) + 1;
     const seen = E.handCards(ui.hand).map(c => c.ex);
     ui.hand = E.dealHand(S, ui.hand.mode, rng, now(), seen);
-    if (ui.hand.mode === 'full') { S.pending = ui.hand; save(); }
+    if (ui.hand.mode === 'full') S.pending = ui.hand;
+    save();
     sfx('flip'); ui.enter = true; render();
   },
   start() {
@@ -801,14 +893,21 @@ const actions = {
       if (st.rest > 0) return startRest(st);
       initStepUi(); go('play');
     };
-    if (res.record) {
+    if (res.foeDown) {
+      sfx('win'); buzz([60, 40, 60, 40, 60, 40, 220]);
+      const prize = res.foeDown.legend ? `Legendary won: ${LEGENDS[res.foeDown.legend].name}` : res.record ? 'Finished with a record' : 'Boss beaten';
+      celebrate(`${res.foeDown.name} is down`, prize, 1900);
+      $app.classList.add('locked');
+      setTimeout(next, 1700);
+    } else if (res.record) {
       sfx('record'); buzz([40, 30, 40, 30, 120]);
-      celebrate('New record');
+      celebrate('New record', `Critical hit for ${res.dmg}`);
       $app.classList.add('locked');
       setTimeout(next, 950);
     } else {
       sfx('tick'); buzz(30);
       next();
+      hitPop(res);
     }
   },
   menu() { ui.sheet = 'menu'; render(); },
@@ -841,6 +940,7 @@ const actions = {
   },
   wear({ theme }) { S.settings.theme = theme; save(); applyTheme(); render(); document.querySelectorAll('.loot').forEach(l => l.classList.add('flipped', 'still')); },
   'card-info'({ id }) { ui.sheet = { card: id }; render(); },
+  'foe-info'() { ui.sheet = 'foe'; render(); },
   set({ key, val }) {
     S.settings[key] = key === 'theme' ? val : key === 'step' ? +val : val === 'true';
     if (key === 'step') S.settings.min = Math.min(S.settings.min, +val);
@@ -883,7 +983,7 @@ document.addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (data?.v !== 1 || !data.settings || !data.lifts) throw new Error('not a backup');
-    S = data; save();
+    S = E.migrate(data); save();
     ui.notice = 'Backup restored.';
   } catch {
     ui.notice = 'That file is not an Iron Deck backup. Nothing was changed.';

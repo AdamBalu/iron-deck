@@ -1,7 +1,8 @@
 // Workout logic. No DOM, no storage: everything here takes the state and returns or mutates plain data.
 import {
   SUITS, SUIT_ORDER, EXERCISES, EX, MODS, STYLES, LOOT_THEMES,
-  SEASONS, SEASON_LENGTH, WILD_RANGES, HEAVY_THINGS,
+  SEASONS, WILD_RANGES, HEAVY_THINGS,
+  FOES_SMALL, FOES_BIG, COMBOS, GEAR_STEP, WEAPONS, WEAPON_STEP, LEGENDS,
 } from './data.js';
 
 const DAY = 86400000;
@@ -42,10 +43,21 @@ export function newState(setup, now) {
     v: 1, createdAt: now, settings,
     xp: 0, suitXp: zero(), tonnage: 0, hands: 0, loots: 0, records: 0,
     debt: zero(), lifts: {},
-    unlocked: { exercises, mods: [], styles: ['pairs'], themes: ['indigo'] },
+    unlocked: { exercises, mods: [], styles: ['pairs'], themes: ['indigo'], combos: [] },
+    foe: spawnFoe(0), foesDown: 0, gear: zero(), legends: [],
     fresh: [], lastTrained: {}, lastExercises: [], lastStyle: null, lastBoss: null, lastHandAt: null,
     history: [], current: null, pending: null,
   };
+}
+
+// Brings a save from an earlier version up to date. Safe to run on every load.
+export function migrate(state) {
+  state.gear ??= Object.fromEntries(SUIT_ORDER.map(s => [s, 0]));
+  state.legends ??= [];
+  state.unlocked.combos ??= [];
+  state.foesDown ??= Math.floor((state.hands ?? 0) / 4);
+  state.foe ??= spawnFoe(state.foesDown, state);
+  return state;
 }
 
 const ownedExercises = (state) =>
@@ -125,15 +137,117 @@ function addBest(lift, w, r) {
 // ---------- seasons, levels ----------
 
 const ROMAN = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII'];
-export function seasonInfo(state, hands = state.hands) {
-  const n = Math.floor(hands / SEASON_LENGTH) + 1;
+// A season is three bosses: two smaller ones, then the season boss.
+export function seasonInfo(state, down = state.foesDown ?? 0) {
+  const n = Math.floor(down / 3) + 1;
   const def = SEASONS[(n - 1) % SEASONS.length];
   const lap = Math.floor((n - 1) / SEASONS.length);
-  const handsIn = hands % SEASON_LENGTH;
+  const beaten = down % 3;
   return {
     n, def, name: def.name + (ROMAN[lap] ?? ` ${lap + 1}`),
-    handsIn, handsLeft: SEASON_LENGTH - handsIn, next: SEASONS[n % SEASONS.length],
+    beaten, left: 3 - beaten, next: SEASONS[n % SEASONS.length],
   };
+}
+
+// ---------- the fight ----------
+
+export function foeInfo(k) {
+  const big = k % 3 === 2;
+  const list = big ? FOES_BIG : FOES_SMALL;
+  const idx = big ? Math.floor(k / 3) : k - Math.floor((k + 1) / 3);
+  const def = list[idx % list.length];
+  const lap = Math.floor(idx / list.length);
+  // Health grows slowly with each boss so a levelled-up hero still needs a few hands.
+  const max = Math.round((900 + 40 * k) * (big ? 1.4 : 0.8) / 10) * 10;
+  return { k, big, name: def.name + (ROMAN[lap] ?? ` ${lap + 1}`), taunt: def.taunt, weak: def.weak, max, reward: big ? 400 : 150 };
+}
+// A new boss is sized to the hero: about three hands for a smaller one, five for a season boss,
+// judged by how hard recent sets have been hitting. Never below its listed health.
+const HANDS_TO_BEAT = { small: 3, big: 5 };
+const SETS_PER_HAND = 17;
+function spawnFoe(k, state) {
+  const info = foeInfo(k);
+  const paced = (state?.hitAvg ?? 0) * SETS_PER_HAND * (info.big ? HANDS_TO_BEAT.big : HANDS_TO_BEAT.small);
+  const max = Math.max(info.max, Math.round(paced / 10) * 10);
+  return { k, hp: max, max };
+}
+
+// What one set of this suit hits for before any multipliers.
+export function power(state, suit) {
+  return 10 + (suitLevelFor(state.suitXp[suit]).level - 1) + GEAR_STEP * (state.gear?.[suit] ?? 0);
+}
+
+export function weapon(state) {
+  let tier = 0;
+  WEAPONS.forEach(([at], i) => { if (state.tonnage >= at) tier = i; });
+  const next = WEAPONS[tier + 1];
+  return {
+    tier, name: WEAPONS[tier][1],
+    crit: WEAPON_STEP * tier + (state.legends?.includes('wallbreaker') ? 10 : 0),
+    next: next ? { at: next[0], name: next[1] } : null,
+  };
+}
+
+// One set against the current boss. trail is what has been played so far this hand.
+// Pure: returns the hit and the entry to append to the trail, changes nothing.
+function strike(state, trail, card, reps, record, skip = []) {
+  if (!(reps > 0)) return { dmg: 0, crit: false, weak: false, combos: [], entry: null };
+  const suit = EX[card.ex].suit;
+  const has = (id) => !!state.legends?.includes(id);
+  const owned = (state.unlocked.combos ?? []).filter(c => !skip.includes(c));
+  const weak = foeInfo(state.foe.k).weak === suit;
+  const prev = trail[trail.length - 1];
+  const met = card.reps == null || reps >= card.reps;
+  const crit = record || (has('ironheart') && trail.length === 0);
+
+  let dmg = power(state, suit) + (met && has('crown') ? 2 : 0);
+  if (weak) dmg *= has('skin') ? 2 : 1.5;
+  if (card.boss) dmg *= has('boots') ? 3 : 2;
+  if (crit) dmg = dmg * 2 + weapon(state).crit;
+
+  const combos = [];
+  const beside = (a, b) => !!prev && ((prev.suit === a && suit === b) || (prev.suit === b && suit === a));
+  if (owned.includes('pushpull') && beside('chest', 'back')) combos.push('pushpull');
+  if (owned.includes('armlock') && beside('biceps', 'triceps')) combos.push('armlock');
+  const run = met ? (prev?.run ?? 0) + 1 : 0;
+  if (owned.includes('roll') && run >= 3) combos.push('roll');
+  if (owned.includes('exploit') && weak && prev?.weak) combos.push('exploit');
+  if (owned.includes('secondwind') && record && trail.some(t => t.rec)) combos.push('secondwind');
+  const suits = new Set(trail.map(t => t.suit));
+  if (owned.includes('fullhouse') && !suits.has(suit) && suits.size === 4) combos.push('fullhouse');
+  for (const id of combos) dmg += COMBOS[id].bonus;
+
+  return { dmg: Math.round(dmg), crit, weak, combos, entry: { suit, run, rec: record, weak } };
+}
+
+// What the set about to be played would hit for, plain and as a record.
+export function nextHit(state, hand) {
+  const s = hand.steps[hand.i];
+  if (!s) return null;
+  const card = hand.blocks[s.b].cards[s.c];
+  const trail = hand.trail ?? [];
+  const reps = card.reps ?? 1;
+  return {
+    plain: strike(state, trail, card, reps, false).dmg,
+    crit: strike(state, trail, card, reps, true).dmg,
+    weak: EX[card.ex].suit === foeInfo(state.foe.k).weak,
+  };
+}
+
+// What the rest of a hand should do to the boss if every target is met and nothing is a record.
+export function forecast(state, hand) {
+  const trail = [...(hand.trail ?? [])];
+  const combos = new Set();
+  let dmg = 0;
+  for (const s of hand.steps.slice(hand.i)) {
+    const card = hand.blocks[s.b].cards[s.c];
+    const hit = strike(state, trail, card, card.reps ?? 1, false, ['roll']);
+    if (hit.entry) trail.push(hit.entry);
+    dmg += hit.dmg;
+    hit.combos.forEach(c => combos.add(c));
+  }
+  const weakSuit = foeInfo(state.foe.k).weak;
+  return { dmg, weak: handCards(hand).filter(c => EX[c.ex].suit === weakSuit).length, combos: [...combos] };
 }
 
 export function levelFor(xp, k = 120, p = 1.6) {
@@ -446,6 +560,7 @@ export function dealHand(state, mode, rng, now, avoid = []) {
   best.suits = Object.keys(tally).sort((a, b) => tally[b] - tally[a] || SUIT_ORDER.indexOf(a) - SUIT_ORDER.indexOf(b));
   best.mult = multiplier(state, now);
   best.bounty = pickBounty(state, best, rng);
+  best.season = season.n;
   best.createdAt = now;
   best.id = `${now}-${Math.floor(rng() * 1e6)}`;
   return best;
@@ -476,14 +591,36 @@ export function logSet(state, hand, reps, now) {
   const card = hand.blocks[s.b].cards[s.c];
   if (!hand.startedAt) hand.startedAt = now;
   const known = state.lifts[card.key];
-  hand.undo = { key: card.key, existed: !!known, bests: known ? known.bests.map(b => ({ ...b })) : null };
+  hand.undo = {
+    key: card.key, existed: !!known, bests: known ? known.bests.map(b => ({ ...b })) : null,
+    foe: { ...state.foe }, foesDown: state.foesDown, legends: [...state.legends],
+    dmg: hand.dmg ?? 0, downs: hand.downs?.length ?? 0, trail: hand.trail?.length ?? 0,
+  };
   const lift = state.lifts[card.key] ??= { w: card.w, top: null, sessions: 0, bests: [], first: null, lastAt: 0 };
   const record = isRecord(lift, card.w, reps);
   if (reps > 0) addBest(lift, card.w, reps);
-  card.sets.push({ w: card.w, r: reps, rec: record });
+  const trail = hand.trail ??= [];
+  const hit = strike(state, trail, card, reps, record);
+  if (hit.entry) trail.push(hit.entry);
+  state.foe.hp -= hit.dmg;
+  hand.dmg = (hand.dmg ?? 0) + hit.dmg;
+  let foeDown = null;
+  if (state.foe.hp <= 0) {
+    foeDown = { ...foeInfo(state.foe.k), legend: null };
+    // The final blow on a season boss, landed as a critical hit, takes the next legendary.
+    const legend = foeDown.big && hit.crit ? Object.keys(LEGENDS).find(id => !state.legends.includes(id)) : null;
+    if (legend) { state.legends.push(legend); foeDown.legend = legend; }
+    state.foesDown++;
+    (hand.downs ??= []).push({ k: state.foe.k, legend: foeDown.legend });
+    state.foe = spawnFoe(state.foe.k + 1, state);
+  }
+  card.sets.push({ w: card.w, r: reps, rec: record, d: hit.dmg });
   hand.i++;
   if (hand.i >= hand.steps.length) hand.done = true;
-  return { record, first: lift.sessions === 0, done: hand.done };
+  return {
+    record, first: lift.sessions === 0, done: hand.done,
+    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, combos: hit.combos, foeDown,
+  };
 }
 
 // Takes back the most recent set (one step only), for when a thumb slips.
@@ -494,6 +631,12 @@ export function undoSet(state, hand) {
   hand.blocks[s.b].cards[s.c].sets.pop();
   if (!u.existed) delete state.lifts[u.key];
   else state.lifts[u.key].bests = u.bests;
+  if (u.foe) {
+    state.foe = u.foe; state.foesDown = u.foesDown; state.legends = u.legends;
+    hand.dmg = u.dmg;
+    if (hand.downs) hand.downs.length = u.downs;
+    if (hand.trail) hand.trail.length = u.trail;
+  }
   hand.i--;
   hand.done = false;
   hand.undo = null;
@@ -567,19 +710,37 @@ function progress(lift, card, settings) {
   }
 }
 
-function drawLoot(state, rng) {
+function drawLoot(state, rng, bossDrop = false) {
   const s = state.settings;
   const locked = {
     exercise: EXERCISES.filter(e => !state.unlocked.exercises.includes(e.id) && (s.incline || !e.incline)),
     mod: Object.keys(MODS).filter(m => !state.unlocked.mods.includes(m)),
     theme: LOOT_THEMES.filter(t => !state.unlocked.themes.includes(t)),
+    gear: SUIT_ORDER.filter(k => (state.gear[k] ?? 0) < 3),
+    combo: Object.keys(COMBOS).filter(c => !state.unlocked.combos.includes(c)),
   };
   const drawOne = (n) => {
     let type;
-    if (n === 0 || n === 2) type = 'exercise';
+    if (bossDrop) type = locked.combo.length && (!locked.gear.length || rng() < 0.35) ? 'combo' : 'gear';
+    else if (n === 0 || n === 2) type = 'exercise';
     else if (n === 1) type = 'mod';
-    else { const r = rng(); type = r < 0.62 ? 'exercise' : r < 0.77 ? 'mod' : r < 0.87 ? 'theme' : 'points'; }
-    if (type !== 'points' && !locked[type].length) type = ['exercise', 'mod', 'theme'].find(t => locked[t].length) ?? 'points';
+    else {
+      const r = rng();
+      type = r < 0.5 ? 'exercise' : r < 0.64 ? 'gear' : r < 0.72 ? 'combo' : r < 0.82 ? 'mod' : r < 0.9 ? 'theme' : 'points';
+    }
+    if (type !== 'points' && !locked[type].length) type = ['exercise', 'gear', 'combo', 'mod', 'theme'].find(t => locked[t].length) ?? 'points';
+    if (type === 'gear') {
+      const suit = pickWeighted(rng, locked.gear, k => SUITS[k].weight);
+      state.gear[suit] = (state.gear[suit] ?? 0) + 1;
+      if (state.gear[suit] >= 3) locked.gear.splice(locked.gear.indexOf(suit), 1);
+      return { type, suit, tier: state.gear[suit] };
+    }
+    if (type === 'combo') {
+      const id = pick(rng, locked.combo);
+      locked.combo.splice(locked.combo.indexOf(id), 1);
+      state.unlocked.combos.push(id);
+      return { type, id };
+    }
     if (type === 'exercise') {
       const early = n < 3 ? locked.exercise.filter(e => e.suit === 'chest' || e.suit === 'biceps') : [];
       const ex = pickWeighted(rng, early.length ? early : locked.exercise, e => SUITS[e.suit].weight);
@@ -603,6 +764,7 @@ function drawLoot(state, rng) {
     state.xp += amount;
     return { type: 'points', amount };
   };
+  if (bossDrop) return [drawOne(99)];
   const items = [drawOne(state.loots)];
   if (state.loots >= 3 && rng() < 0.12) items.push(drawOne(state.loots));
   state.loots++;
@@ -646,7 +808,8 @@ export function finishHand(state, hand, rng, now) {
       : played.some(c => c.boss && c.sets.some(s => s.rec));
     bounty = { ...b, won };
   }
-  const xp = Math.round(base * (hand.mult ?? 1)) + (bounty?.won ? bounty.reward : 0);
+  const plate = !!state.legends?.includes('plate');
+  const xp = Math.round(base * (hand.mult ?? 1) * (plate ? 1.25 : 1)) + (bounty?.won ? bounty.reward : 0);
   state.xp += xp;
   state.tonnage += kg;
   state.records += records.length;
@@ -670,14 +833,30 @@ export function finishHand(state, hand, rng, now) {
     const usedEx = played.map(c => c.ex);
     state.fresh = state.fresh.filter(f => !usedEx.includes(f) && !usedMods.includes(f));
     loot = drawLoot(state, rng);
-    const season = seasonInfo(state);
-    if (season.n > before.season) {
-      const d = season.def;
-      if (d.style && !state.unlocked.styles.includes(d.style)) state.unlocked.styles.push(d.style);
-      if (!state.unlocked.themes.includes(d.theme)) state.unlocked.themes.push(d.theme);
-      state.settings.theme = d.theme;
-      newSeason = { n: season.n, name: season.name, blurb: d.blurb, style: d.style, theme: d.theme };
-    }
+  }
+
+  // Bosses beaten during this hand: bonus points and a guaranteed drop each.
+  const downs = (hand.downs ?? []).map(d => ({ ...foeInfo(d.k), legend: d.legend }));
+  let foePoints = 0;
+  for (const d of downs) {
+    foePoints += d.reward;
+    loot.push(...drawLoot(state, rng, true));
+  }
+  state.xp += foePoints;
+  // Running average of what one set hits for, used to size the next boss.
+  if (sets >= 3) {
+    const perSet = (hand.dmg ?? 0) / sets;
+    state.hitAvg = state.hitAvg ? state.hitAvg * 0.6 + perSet * 0.4 : perSet;
+  }
+  const foe = { dmg: hand.dmg ?? 0, downs, points: foePoints, now: { ...foeInfo(state.foe.k), hp: state.foe.hp, max: state.foe.max } };
+
+  const season = seasonInfo(state);
+  if (season.n > (hand.season ?? season.n)) {
+    const d = season.def;
+    if (d.style && !state.unlocked.styles.includes(d.style)) state.unlocked.styles.push(d.style);
+    if (!state.unlocked.themes.includes(d.theme)) state.unlocked.themes.push(d.theme);
+    state.settings.theme = d.theme;
+    newSeason = { n: season.n, name: season.name, blurb: d.blurb, style: d.style, theme: d.theme };
   }
 
   const levelUps = [];
@@ -687,7 +866,7 @@ export function finishHand(state, hand, rng, now) {
   }
   const minutes = hand.startedAt ? Math.max(1, Math.round((now - hand.startedAt) / 60000)) : 0;
   const summary = {
-    xp, base, mult: hand.mult ?? 1, sets, kg, minutes, records, levelUps, loot, newSeason, counted, bounty,
+    xp, base, mult: hand.mult ?? 1, plate, sets, kg, minutes, records, levelUps, loot, newSeason, counted, bounty, foe,
     complete: !!hand.done, level: { from: before.level, to: levelFor(state.xp).level },
   };
   if (sets > 0) {

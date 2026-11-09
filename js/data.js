@@ -216,3 +216,57 @@ export const HEAVY_THINGS = [
   [6000, 'elephant', 'elephants'], [12000, 'city bus', 'city buses'],
   [40000, 'loaded truck', 'loaded trucks'], [140000, 'blue whale', 'blue whales'],
 ];
+
+// ---------- the fight ----------
+// Bosses are the excuses. Every set you log is a hit on the current one; it never heals.
+// Two smaller bosses, then a season boss. weak: sets of that suit hit half again as hard.
+export const FOES_SMALL = [
+  { name: 'Couch Gravity', taunt: 'Sit down. Just for a minute.', weak: 'chest' },
+  { name: 'The Snooze Button', taunt: 'Nine more minutes will not hurt.', weak: 'biceps' },
+  { name: 'Later Gator', taunt: 'Tomorrow is a great day to start.', weak: 'back' },
+  { name: 'The Scroll Hole', taunt: 'One more video first.', weak: 'triceps' },
+  { name: 'Doctor Too-Tired', taunt: 'You have had such a long day.', weak: 'chest' },
+  { name: 'Captain Comfort', taunt: 'Why would anyone leave this blanket?', weak: 'biceps' },
+  { name: 'The Cold Floor', taunt: 'It is freezing out here. Stay in bed.', weak: 'abs' },
+  { name: 'The Mirror Doubt', taunt: 'Nothing is changing anyway.', weak: 'back' },
+];
+export const FOES_BIG = [
+  { name: 'The One-Month Wall', taunt: 'This is where you usually stop.', weak: 'chest' },
+  { name: 'The Plateau', taunt: 'This is as strong as you get.', weak: 'biceps' },
+  { name: 'Madame Meh', taunt: 'Is any of this even worth it?', weak: 'back' },
+  { name: 'Baron von Tomorrow', taunt: 'See you next week. Or the week after.', weak: 'triceps' },
+];
+
+// Combos land by themselves when the sets you play fit the pattern. They drop as reward cards.
+export const COMBOS = {
+  pushpull:   { name: 'Push-pull', bonus: 8,  how: 'A chest set and a back set, one straight after the other.' },
+  armlock:    { name: 'Arm lock', bonus: 8,   how: 'A biceps set and a triceps set, one straight after the other.' },
+  roll:       { name: 'On a roll', bonus: 6,  how: 'Hit your target three sets running. Every set hits harder until you miss one.' },
+  exploit:    { name: 'Sore spot', bonus: 10, how: 'Two sets in a row on the suit the boss is weak to.' },
+  secondwind: { name: 'Second wind', bonus: 15, how: 'After your first record in a hand, every later record hits harder still.' },
+  fullhouse:  { name: 'Full house', bonus: 60, how: 'Play five different suits in one hand.' },
+};
+
+// One piece of gear per suit, three tiers each. Every tier adds GEAR_STEP damage to that suit's sets.
+export const GEAR_STEP = 3;
+export const GEAR = {
+  chest: 'Chalk', biceps: 'Elbow sleeves', back: 'Lifting straps',
+  triceps: 'Wrist wraps', abs: 'Lifting belt', rest: 'Flat shoes',
+};
+
+// Your weapon is your dumbbell. It upgrades with total kilos lifted; each tier makes records hit harder.
+export const WEAPON_STEP = 4;
+export const WEAPONS = [
+  [0, 'Rusty dumbbell'], [5000, 'Cast-iron dumbbell'], [15000, 'Steel dumbbell'], [40000, 'Chrome dumbbell'],
+  [80000, 'Titanium dumbbell'], [150000, 'Golden dumbbell'], [300000, 'Meteorite dumbbell'],
+];
+
+// Legendaries: land the final blow on a season boss with a record and you take the next one on this list.
+export const LEGENDS = {
+  wallbreaker: { name: 'Wallbreaker', how: 'Records hit 10 harder.' },
+  crown:       { name: 'Crown of Reps', how: 'Every set that meets its target hits 2 harder.' },
+  boots:       { name: 'Gravity Boots', how: 'The finisher hits triple instead of double.' },
+  plate:       { name: 'The Golden Plate', how: 'Every hand pays a quarter more points.' },
+  skin:        { name: 'Thick Skin', how: 'The weak suit hits double instead of half again.' },
+  ironheart:   { name: 'Ironheart', how: 'The first set of every hand is a critical hit.' },
+};
