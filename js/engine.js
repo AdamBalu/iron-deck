@@ -152,6 +152,24 @@ export function heavyThing(kg) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+// How much stronger than the first session, on dumbbell lifts played at least twice.
+// Uses estimated one-rep strength so heavier-for-fewer and lighter-for-more compare fairly.
+export function strengthGain(state) {
+  const oneRep = (w, r) => w * (1 + r / 30);
+  const bySuit = {};
+  for (const [key, lift] of Object.entries(state.lifts)) {
+    const ex = EX[key];
+    if (!ex || !isDb(ex) || !lift.first || lift.sessions < 2 || !lift.bests?.length) continue;
+    const first = oneRep(lift.first.w, lift.first.r);
+    const best = Math.max(...lift.bests.map(b => oneRep(b.w, b.r)));
+    if (first > 0) (bySuit[ex.suit] ??= []).push(Math.max(0, best / first - 1));
+  }
+  const mean = (xs) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length * 100);
+  const suits = Object.fromEntries(Object.entries(bySuit).map(([s, xs]) => [s, mean(xs)]));
+  const all = Object.values(bySuit).flat();
+  return { overall: all.length ? mean(all) : null, suits };
+}
+
 export function multiplier(state, now) {
   if (!state.lastHandAt) return 1;
   const days = (now - state.lastHandAt) / DAY;
@@ -368,6 +386,24 @@ function buildHand(state, opts, rng, now) {
   return hand;
 }
 
+// One optional side goal per hand. Winning pays extra; missing it costs nothing.
+function pickBounty(state, hand, rng) {
+  const cards = handCards(hand);
+  const options = [{ type: 'clear', reward: 80 }];
+  if (state.hands > 0) {
+    const repeats = cards.filter(c => !c.boss && !c.first).length;
+    if (repeats >= 1) {
+      const n = 1 + Math.floor(rng() * Math.min(3, repeats));
+      options.push({ type: 'records', n, reward: 50 + 30 * n });
+    }
+    const boss = cards.find(c => c.boss);
+    if (boss && boss.lastTop != null) options.push({ type: 'boss', n: boss.lastTop, reward: 100 });
+  }
+  const bounty = pick(rng, options);
+  if (state.hands > 0 && rng() < 0.15) { bounty.gold = true; bounty.reward *= 3; }
+  return bounty;
+}
+
 // avoid: exercise ids to steer clear of, used when reshuffling so the new hand is actually new.
 export function dealHand(state, mode, rng, now, avoid = []) {
   const season = seasonInfo(state);
@@ -409,6 +445,7 @@ export function dealHand(state, mode, rng, now, avoid = []) {
   for (const c of handCards(best)) tally[EX[c.ex].suit] = (tally[EX[c.ex].suit] ?? 0) + 1;
   best.suits = Object.keys(tally).sort((a, b) => tally[b] - tally[a] || SUIT_ORDER.indexOf(a) - SUIT_ORDER.indexOf(b));
   best.mult = multiplier(state, now);
+  best.bounty = pickBounty(state, best, rng);
   best.createdAt = now;
   best.id = `${now}-${Math.floor(rng() * 1e6)}`;
   return best;
@@ -438,6 +475,8 @@ export function logSet(state, hand, reps, now) {
   if (!s) return null;
   const card = hand.blocks[s.b].cards[s.c];
   if (!hand.startedAt) hand.startedAt = now;
+  const known = state.lifts[card.key];
+  hand.undo = { key: card.key, existed: !!known, bests: known ? known.bests.map(b => ({ ...b })) : null };
   const lift = state.lifts[card.key] ??= { w: card.w, top: null, sessions: 0, bests: [], first: null, lastAt: 0 };
   const record = isRecord(lift, card.w, reps);
   if (reps > 0) addBest(lift, card.w, reps);
@@ -445,6 +484,20 @@ export function logSet(state, hand, reps, now) {
   hand.i++;
   if (hand.i >= hand.steps.length) hand.done = true;
   return { record, first: lift.sessions === 0, done: hand.done };
+}
+
+// Takes back the most recent set (one step only), for when a thumb slips.
+export function undoSet(state, hand) {
+  const u = hand.undo;
+  if (!u || hand.i === 0) return false;
+  const s = hand.steps[hand.i - 1];
+  hand.blocks[s.b].cards[s.c].sets.pop();
+  if (!u.existed) delete state.lifts[u.key];
+  else state.lifts[u.key].bests = u.bests;
+  hand.i--;
+  hand.done = false;
+  hand.undo = null;
+  return true;
 }
 
 export function setCardWeight(state, hand, w) {
@@ -459,6 +512,7 @@ export function skipCard(hand) {
   const s = hand.steps[hand.i];
   if (!s) return;
   hand.steps = hand.steps.filter((x, k) => k < hand.i || !(x.b === s.b && x.c === s.c));
+  hand.skipped = true;
   if (hand.i >= hand.steps.length) hand.done = true;
 }
 
@@ -580,10 +634,19 @@ export function finishHand(state, hand, rng, now) {
     }
     lift.sessions++;
     lift.lastAt = now;
+    lift.log = [...(lift.log ?? []), { at: now, w: c.w, r: Math.max(...c.sets.map(s => s.r)) }].slice(-40);
     progress(lift, c, state.settings);
   }
   if (hand.done && sets > 0) base += 50;
-  const xp = Math.round(base * (hand.mult ?? 1));
+  let bounty = null;
+  if (hand.bounty) {
+    const b = hand.bounty;
+    const won = b.type === 'clear' ? !!hand.done && !hand.skipped
+      : b.type === 'records' ? records.length >= b.n
+      : played.some(c => c.boss && c.sets.some(s => s.rec));
+    bounty = { ...b, won };
+  }
+  const xp = Math.round(base * (hand.mult ?? 1)) + (bounty?.won ? bounty.reward : 0);
   state.xp += xp;
   state.tonnage += kg;
   state.records += records.length;
@@ -624,7 +687,7 @@ export function finishHand(state, hand, rng, now) {
   }
   const minutes = hand.startedAt ? Math.max(1, Math.round((now - hand.startedAt) / 60000)) : 0;
   const summary = {
-    xp, base, mult: hand.mult ?? 1, sets, kg, minutes, records, levelUps, loot, newSeason, counted,
+    xp, base, mult: hand.mult ?? 1, sets, kg, minutes, records, levelUps, loot, newSeason, counted, bounty,
     complete: !!hand.done, level: { from: before.level, to: levelFor(state.xp).level },
   };
   if (sets > 0) {

@@ -56,6 +56,16 @@ function targetText(card) {
   return `${kg(card.w)} kg${card.boss ? ', all out' : ` × ${card.reps}`}`;
 }
 
+const videoUrl = (ex) => 'https://www.youtube.com/results?search_query=' +
+  encodeURIComponent(ex.q ?? `how to ${ex.name}${isDb(ex) && !/dumbbell/i.test(ex.name) ? ' dumbbell' : ''}`);
+const videoLink = (ex) => `<a class="video" href="${videoUrl(ex)}" target="_blank" rel="noopener">Watch a video</a>`;
+
+function bountyText(b) {
+  if (b.type === 'records') return b.n === 1 ? 'set a new record' : `set ${b.n} new records`;
+  if (b.type === 'boss') return `beat ${b.n} on the boss card`;
+  return 'play every card to the end';
+}
+
 function applyTheme() {
   const t = THEMES[S?.settings.theme] ?? THEMES.indigo;
   const r = document.documentElement.style;
@@ -243,6 +253,7 @@ function dealScreen() {
     </header>
     <h1 class="title">${h.mode === 'quick' ? 'Quick hand' : style.name}</h1>
     <p class="sub">${h.mode === 'quick' ? 'Two cards and a boss. In and out.' : style.how}${h.mult > 1 ? ` Points on this hand are ${h.mult === 2 ? 'doubled' : 'up 25%'}.` : ''}</p>
+    ${h.bounty ? `<p class="bounty ${h.bounty.gold ? 'gold' : ''}"><b>${h.bounty.gold ? 'Golden bounty' : 'Bounty'}</b> ${bountyText(h.bounty)} for ${h.bounty.reward} extra points</p>` : ''}
     <div class="blocks">${blocks}</div>
     <p class="warm">Warm up first: ten easy push-ups and some arm circles.</p>
     <div class="dock">
@@ -288,7 +299,8 @@ function playScreen() {
   const dots = hand().steps.map((_, i) => `<span class="${i < st.index ? 'done' : i === st.index ? 'now' : ''}"></span>`).join('');
   const timed = ex.kind === 'time';
   const withWho = st.partners.length ? `, back to back with ${listWords(st.partners.map(p => EX[p.ex].name.toLowerCase()))}` : '';
-  const setLine = c.boss ? 'Boss card. One set, everything you have.' : `Set ${st.setNo} of ${st.setsTotal}${withWho}`;
+  const setLine = (c.boss ? 'Boss card. One set, everything you have.' : `Set ${st.setNo} of ${st.setsTotal}${withWho}`) +
+    (ex.side ? (c.boss ? ' Count each side.' : '. Reps are for each side') : '');
 
   let target;
   if (isDb(ex)) {
@@ -328,7 +340,7 @@ function playScreen() {
         <button class="how" data-act="toggle-cue">${ui.cue ? 'Hide tips' : 'How to do it'}</button></div>
       <h2>${ex.name}</h2>
       <p class="setno">${setLine}</p>
-      ${ui.cue ? `<p class="cue">${ex.cue}</p>` : ''}
+      ${ui.cue ? `<p class="cue">${ex.cue} ${videoLink(ex)}</p>` : ''}
       ${mod}
       ${target}
       ${adjust}
@@ -407,6 +419,7 @@ function finishScreen() {
       <div><span class="num">${m.records.length}</span><small>${m.records.length === 1 ? 'new record' : 'new records'}</small></div>
     </div>
     <p class="facts">${m.sets} ${m.sets === 1 ? 'set' : 'sets'}, ${num(m.kg)} kg lifted${m.minutes ? `, ${m.minutes} min` : ''}${m.level.to > m.level.from ? `. You are now <b>level ${m.level.to}</b>` : ''}</p>
+    ${m.bounty?.won ? `<p class="bounty won ${m.bounty.gold ? 'gold' : ''}"><b>${m.bounty.gold ? 'Golden bounty won' : 'Bounty won'}</b> ${m.bounty.reward} extra points: you managed to ${bountyText(m.bounty)}</p>` : ''}
     ${season}
     <section class="lvls">${ups}</section>
     ${loot}
@@ -417,9 +430,10 @@ function progressScreen() {
   const lv = E.levelFor(S.xp);
   const season = E.seasonInfo(S);
   const thing = E.heavyThing(S.tonnage);
+  const gain = E.strengthGain(S);
   const suits = SUIT_ORDER.map((s) => {
     const l = E.suitLevelFor(S.suitXp[s]);
-    return `<div>${suitIcon(s)}<span>${suitName(s)}</span><span class="bar"><i style="width:${Math.round(l.into / l.span * 100)}%;background:${SUITS[s].color}"></i></span><span class="num">${l.level}</span></div>`;
+    return `<div>${suitIcon(s)}<span>${suitName(s)}</span><span class="bar"><i style="width:${Math.round(l.into / l.span * 100)}%;background:${SUITS[s].color}"></i></span><span class="pct">${gain.suits[s] ? `+${gain.suits[s]}%` : ''}</span><span class="num">${l.level}</span></div>`;
   }).join('');
   const gains = Object.entries(S.lifts)
     .filter(([k, l]) => !k.includes(':') && l.first && l.sessions >= 2 && EX[k])
@@ -448,6 +462,7 @@ function progressScreen() {
       <span class="num">${num(S.tonnage)} kg</span>
       <p>${thing ? `lifted so far. That is ${thing}.` : 'lifted so far. Play a hand and this starts climbing.'}</p>
     </section>
+    ${gain.overall ? `<section class="stronger"><span class="num">+${gain.overall}%</span><p>stronger than your first sessions, on the lifts you have played more than once</p></section>` : ''}
     <section class="overall">
       <p><span>Level ${lv.level}</span><span>${num(lv.span - lv.into)} points to level ${lv.level + 1}</span></p>
       <div class="bar"><i style="width:${Math.round(lv.into / lv.span * 100)}%"></i></div>
@@ -548,11 +563,24 @@ function navBar() {
   </nav>`;
 }
 
+// A small line chart of estimated strength per session.
+function spark(lift) {
+  const pts = (lift?.log ?? []).map(p => (p.w > 0 ? p.w * (1 + p.r / 30) : p.r));
+  if (pts.length < 2) return '';
+  const lo = Math.min(...pts), hi = Math.max(...pts), span = hi - lo || 1;
+  const xy = pts.map((v, i) => [6 + i * (288 / (pts.length - 1)), 46 - (v - lo) / span * 38]);
+  const [lx, ly] = xy[xy.length - 1];
+  return `<svg class="spark" viewBox="0 0 300 54" role="img" aria-label="Your strength on this card, session by session">
+    <polyline points="${xy.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="5" fill="currentColor"/></svg>`;
+}
+
 function sheetView() {
   if (ui.sheet === 'menu') {
     const st = stepNow();
     const can = st && st.card.sets.length === 0;
     return `<div class="scrim" data-act="close-sheet"></div><div class="sheet" role="dialog" aria-label="Options">
+      ${hand().undo && hand().i > 0 ? '<button data-act="undo">Undo the last set</button>' : ''}
       ${can ? '<button data-act="swap">Swap this card for another</button>' : ''}
       <button data-act="skip">Skip this card</button>
       <button data-act="finish-early">Finish the hand here and collect</button>
@@ -569,7 +597,8 @@ function sheetView() {
     return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info" role="dialog" aria-label="${ex.name}">
       <p class="corner">${suitIcon(ex.suit, 18)}<span>${suitName(ex.suit)} card</span></p>
       <h2>${ex.name}</h2>
-      <p>${ex.cue}</p>
+      <p>${ex.cue} ${videoLink(ex)}</p>
+      ${spark(l)}
       <p class="muted">${l?.sessions ? `Played ${l.sessions} ${l.sessions === 1 ? 'time' : 'times'}. Best: ${best}.` : 'Not played yet. It is first in line for the next hand of this suit.'}</p>
       <button class="quiet" data-act="close-sheet">Close</button>
     </div>`;
@@ -601,7 +630,23 @@ function go(screen) {
   render();
   window.scrollTo(0, 0);
   if (screen === 'rest') startRestTicker();
+  // Keep one history entry while away from the table, so the phone's back button has somewhere to go.
+  const deep = screen !== 'home' && screen !== 'setup';
+  try {
+    if (deep && !history.state?.deep) history.pushState({ deep: true }, '');
+    else if (!deep && history.state?.deep) { skipPop = true; history.back(); }
+  } catch { /* history unavailable */ }
 }
+
+let skipPop = false;
+window.addEventListener('popstate', () => {
+  if (skipPop) { skipPop = false; return; }
+  const stay = () => { try { history.pushState({ deep: true }, ''); } catch { /* ignore */ } };
+  if (ui.sheet) { ui.sheet = null; render(); stay(); return; }
+  if (ui.screen === 'play' || ui.screen === 'rest') { ui.sheet = 'menu'; render(); stay(); return; }
+  if (ui.screen === 'settings') { stay(); go('progress'); return; }
+  if (ui.screen !== 'home' && ui.screen !== 'setup') go('home');
+});
 
 function countUp() {
   const el = document.getElementById('xp-num');
@@ -617,8 +662,12 @@ function countUp() {
 }
 
 function startRestTicker() {
+  let lastWhole = null;
   const tick = () => {
     const left = (ui.restEnd - now()) / 1000;
+    const whole = Math.ceil(left);
+    if (lastWhole != null && whole !== lastWhole && whole >= 1 && whole <= 3) sfx('tick');
+    lastWhole = whole;
     const n = document.getElementById('rest-num'), bar = document.getElementById('rest-bar');
     if (n) n.textContent = Math.max(0, Math.ceil(left));
     if (bar) bar.style.width = `${Math.max(0, Math.min(100, left / ui.restTotal * 100))}%`;
@@ -675,6 +724,7 @@ const actions = {
     const s = ui.setup;
     S = E.newState({ ...s, max: Math.max(s.max, s.bench, s.curl) }, now());
     save();
+    navigator.storage?.persist?.().catch(() => {});
     go('home');
   },
   tab({ to }) { go(to); },
@@ -751,6 +801,11 @@ const actions = {
     save(); ui.sheet = null; initStepUi();
     if (swapped) sfx('flip'); else toast('No other card fits here right now.');
     if (ui.screen === 'rest') render(); else go('play');
+  },
+  undo() {
+    E.undoSet(S, hand());
+    save(); initStepUi();
+    go('play');
   },
   skip() {
     E.skipCard(hand());
@@ -830,4 +885,5 @@ if ('serviceWorker' in navigator && location.protocol === 'https:' || location.h
   navigator.serviceWorker?.register('sw.js').catch(() => { /* offline support is optional */ });
 }
 
+if (S) navigator.storage?.persist?.().catch(() => {});
 render();

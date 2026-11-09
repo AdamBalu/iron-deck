@@ -132,6 +132,12 @@ h1, h2, h3 { font-weight: 900; }
 .block.boss .mini .tgt { color: var(--gold); font-size: 16px; white-space: normal; max-width: 9ch; line-height: 1; }
 .load { display: block; font-size: 13px; font-weight: 700; color: var(--gold); padding: 4px 2px 6px; }
 .block.joined .load { background: var(--table); padding: 6px 2px; }
+.bounty { margin-top: 12px; border: 2px dashed var(--muted); border-radius: 14px; padding: 9px 12px; font-size: 14.5px; }
+.bounty b { font-weight: 700; margin-right: 4px; }
+.bounty.gold, .bounty.won { border-color: var(--gold); border-style: solid; }
+.bounty.gold b, .bounty.won b { color: var(--gold); }
+.video { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; color: inherit; white-space: nowrap; }
+.spark { width: 100%; height: 54px; color: var(--ink); }
 .warm { color: var(--muted); font-size: 14px; margin-top: 16px; }
 .s-deal.enter .mini { animation: deal .42s cubic-bezier(.2, .9, .3, 1.15) both; animation-delay: calc(var(--i, 0) * 70ms); }
 @keyframes deal { from { opacity: 0; transform: translate(60px, -40px) rotate(8deg); } }
@@ -238,7 +244,7 @@ button.target .num:first-child { text-decoration: underline dotted 3px; text-und
 .overall .trio { margin: 12px 0 0; color: var(--muted); }
 .overall .trio b { color: var(--paper); font-family: var(--display); font-size: 22px; margin-right: 3px; }
 .suits { margin-top: 20px; display: grid; gap: 10px; }
-.suits div { display: grid; grid-template-columns: 20px 84px 1fr 28px; align-items: center; gap: 8px; font-size: 15px; }
+.suits div { display: grid; grid-template-columns: 20px 84px 1fr auto 28px; align-items: center; gap: 8px; font-size: 15px; }
 .suits .bar { height: 10px; }
 .suits .num { font-size: 22px; text-align: right; }
 .gains li, .recent li { display: flex; align-items: baseline; gap: 8px; padding: 9px 0; font-size: 14.5px; }
@@ -252,6 +258,11 @@ button.target .num:first-child { text-decoration: underline dotted 3px; text-und
 .pips { display: flex; gap: 4px; margin-top: 12px; }
 .pips span { flex: 1; height: 10px; border-radius: 3px; background: var(--pit); }
 .pips span.on { background: var(--gold); }
+
+.suits .pct { font-size: 13.5px; font-weight: 700; color: var(--gold); min-width: 38px; text-align: right; }
+.stronger { margin-top: 18px; display: flex; align-items: center; gap: 14px; background: var(--deep); border-radius: 16px; padding: 12px 14px; }
+.stronger .num { font-size: 46px; line-height: 1; color: var(--gold); }
+.stronger p { font-size: 14.5px; color: var(--muted); }
 
 /* ----- deck ----- */
 .decksuit { margin-top: 20px; }
@@ -275,6 +286,7 @@ button.target .num:first-child { text-decoration: underline dotted 3px; text-und
   background: var(--paper); color: var(--ink); border-radius: 22px 22px 0 0;
   padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); display: grid; gap: 2px;
   animation: rise .22s cubic-bezier(.2, .9, .3, 1) both;
+  max-height: 86dvh; overflow-y: auto;
 }
 @keyframes rise { from { transform: translateY(100%); } }
 .sheet button { min-height: 54px; text-align: left; font-size: 16.5px; font-weight: 500; border-bottom: 1px solid #e6e2d4; }

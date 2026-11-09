@@ -358,3 +358,99 @@ test('a quick hand always leads with chest when chest is rested', () => {
     assert.ok(handCards(hand).some(c => !c.boss && EX[c.ex].suit === 'chest'), `quick hand ${i} has no chest`);
   }
 });
+
+// ----- second round: undo, bounties, strength -----
+import { undoSet, strengthGain } from '../js/engine.js';
+
+test('undoing the last set removes it, steps back, and forgets the record it set', () => {
+  const s = setup();
+  s.lifts['bench-press'] = { w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] };
+  const hand = dealHand(s, 'full', mulberry32(1), T0);
+  const card = currentStep(hand).card;
+  Object.assign(card, { ex: 'bench-press', key: 'bench-press', w: 20, reps: 9, mod: null, boss: false });
+  assert.equal(undoSet(s, hand), false, 'nothing to undo before the first set');
+  logSet(s, hand, 19, T0); // a slip of the thumb
+  assert.equal(undoSet(s, hand), true);
+  assert.equal(hand.i, 0);
+  assert.equal(card.sets.length, 0);
+  assert.deepEqual(s.lifts['bench-press'].bests, [{ w: 20, r: 8 }]);
+  assert.equal(logSet(s, hand, 9, T0).record, true, 'the real set still counts as a record');
+  assert.equal(undoSet(s, hand), true);
+  assert.equal(undoSet(s, hand), false, 'only one step back');
+});
+
+test('undoing the final set reopens the hand', () => {
+  const s = setup();
+  const hand = dealHand(s, 'quick', mulberry32(2), T0);
+  play(s, hand, T0);
+  assert.equal(undoSet(s, hand), true);
+  assert.equal(hand.done, false);
+  assert.ok(currentStep(hand));
+});
+
+test('every hand carries a bounty, and the first one is simply to clear the hand', () => {
+  const s = setup();
+  const rng = mulberry32(3);
+  const first = dealHand(s, 'full', rng, T0);
+  assert.equal(first.bounty.type, 'clear');
+  assert.ok(first.bounty.reward > 0);
+  play(s, first, T0);
+  const sum = finishHand(s, first, rng, T0);
+  assert.equal(sum.bounty.won, true);
+  assert.equal(sum.xp, Math.round(sum.base * sum.mult) + sum.bounty.reward);
+  for (let i = 1; i < 30; i++) {
+    const h = dealHand(s, 'full', rng, T0 + i * 2 * DAY);
+    assert.ok(['clear', 'records', 'boss'].includes(h.bounty.type), `hand ${i}: ${h.bounty.type}`);
+    play(s, h, T0 + i * 2 * DAY);
+    finishHand(s, h, rng, T0 + i * 2 * DAY);
+  }
+});
+
+test('a clear-the-hand bounty is lost by skipping a card or stopping early, without any penalty', () => {
+  const s = setup();
+  const rng = mulberry32(3);
+  const hand = dealHand(s, 'full', rng, T0);
+  skipCard(hand);
+  play(s, hand, T0);
+  const sum = finishHand(s, hand, rng, T0);
+  assert.equal(sum.bounty.won, false);
+  assert.equal(sum.xp, Math.round(sum.base * sum.mult));
+});
+
+test('a records bounty pays out when the hand sets that many records', () => {
+  const s = setup();
+  const rng = mulberry32(12);
+  let won = 0, lost = 0;
+  for (let i = 0; i < 40; i++) {
+    const now = T0 + i * 2 * DAY;
+    const h = dealHand(s, 'full', rng, now);
+    play(s, h, now, (st) => (st.card.reps ?? 12) + (i % 2)); // every other hand beats the targets
+    const sum = finishHand(s, h, rng, now);
+    if (h.bounty.type === 'records') {
+      assert.equal(sum.bounty.won, sum.records.length >= h.bounty.n, `hand ${i}`);
+      sum.bounty.won ? won++ : lost++;
+    }
+  }
+  assert.ok(won > 0, 'expected at least one records bounty to be won');
+});
+
+test('strength gain compares your first session on each lift with your best since', () => {
+  const s = setup();
+  assert.equal(strengthGain(s).overall, null);
+  s.lifts['bench-press'] = { w: 22.5, top: 8, sessions: 4, first: { w: 20, r: 10, at: T0 }, bests: [{ w: 20, r: 12 }, { w: 22.5, r: 11 }] };
+  s.lifts['curl'] = { w: 12.5, top: 12, sessions: 1, first: { w: 12.5, r: 12, at: T0 }, bests: [{ w: 12.5, r: 12 }] };
+  s.lifts['push-up'] = { w: 0, top: 20, sessions: 3, first: { w: 0, r: 10, at: T0 }, bests: [{ w: 0, r: 20 }] };
+  const g = strengthGain(s);
+  assert.equal(g.suits.chest, 15); // 20x10 is worth about 26.7 kg for one rep, 22.5x11 about 30.8
+  assert.equal(g.suits.biceps, undefined, 'one session is not a trend');
+  assert.equal(g.overall, 15);
+});
+
+test('each lift keeps a short log of its best set per session for charting', () => {
+  const s = setup();
+  const rng = mulberry32(14);
+  for (let i = 0; i < 12; i++) fullRound(s, rng, T0 + i * 2 * DAY);
+  const logged = Object.values(s.lifts).filter(l => l.log?.length >= 2);
+  assert.ok(logged.length > 3, 'several lifts should have two or more sessions logged');
+  for (const l of logged) for (const p of l.log) assert.ok(p.at && p.r > 0 && p.w >= 0);
+});

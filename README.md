@@ -8,6 +8,8 @@ Dumbbell workouts dealt as a hand of cards, fresh every time. Built for a bench 
 - Nothing can be lost: no streaks, only points, levels and records that go up.
 - Every hand ends with a reward card: a new exercise, a new twist, or a new look.
 - Every 12 hands a new season changes the rep ranges, the hand styles and the colours.
+- Each hand has an optional bounty for extra points. Missing it costs nothing.
+- The progress screen shows how much stronger you are than in your first sessions.
 
 Your history is stored only in the browser on your phone. Use Settings to save a backup file.
 
