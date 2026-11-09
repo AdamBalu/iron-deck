@@ -12,6 +12,7 @@ Dumbbell workouts dealt as a hand of cards, fresh every time. Built for a bench 
 - Three bosses make a season. Beating one drops gear; finishing a season boss with a record drops a legendary.
 - Gear comes in five rarities across six weapon types and seven armour slots, and shows on your hero.
 - Every set also earns iron, which forges the next rarity up of anything you own.
+- Each boss fears one kind of weapon. Fight it with that kind in hand and every hit lands a quarter harder.
 - Each hand has an optional bounty for extra points. Missing it costs nothing.
 - The progress screen shows how much stronger you are than in your first sessions.
 

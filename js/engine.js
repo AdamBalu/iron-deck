@@ -2,7 +2,7 @@
 import {
   SUITS, SUIT_ORDER, EXERCISES, EX, MODS, STYLES, LOOT_THEMES,
   SEASONS, WILD_RANGES, HEAVY_THINGS,
-  FOES_SMALL, FOES_BIG, COMBOS, ITEMS, FORGE_COST,
+  FOES_SMALL, FOES_BIG, BANE_BONUS, COMBOS, ITEMS, FORGE_COST,
 } from './data.js';
 
 const DAY = 86400000;
@@ -172,7 +172,7 @@ export function foeInfo(k) {
   const lap = Math.floor(idx / list.length);
   // Health grows slowly with each boss so a levelled-up hero still needs a few hands.
   const max = Math.round((900 + 40 * k) * (big ? 1.4 : 0.8) / 10) * 10;
-  return { k, big, name: def.name + (ROMAN[lap] ?? ` ${lap + 1}`), taunt: def.taunt, weak: def.weak, max, reward: big ? 400 : 150 };
+  return { k, big, name: def.name + (ROMAN[lap] ?? ` ${lap + 1}`), taunt: def.taunt, weak: def.weak, bane: def.bane, max, reward: big ? 400 : 150 };
 }
 // A new boss is sized to the hero: about three hands for a smaller one, five for a season boss,
 // judged by how hard recent sets have been hitting. Never below its listed health.
@@ -262,12 +262,14 @@ export function power(state, suit) {
 // One set against the current boss. trail is what has been played so far this hand.
 // Pure: returns the hit and the entry to append to the trail, changes nothing.
 function strike(state, trail, card, reps, record, skip = []) {
-  if (!(reps > 0)) return { dmg: 0, crit: false, weak: false, combos: [], iron: 0, entry: null };
+  if (!(reps > 0)) return { dmg: 0, crit: false, weak: false, bane: false, combos: [], iron: 0, entry: null };
   const suit = EX[card.ex].suit;
   const weapon = equipped(state, 'weapon');
   const perk = (kind) => (weapon?.perk === kind ? weapon.value : 0);
   const owned = (state.unlocked.combos ?? []).filter(c => !skip.includes(c));
-  const weak = foeInfo(state.foe.k).weak === suit;
+  const foe = foeInfo(state.foe.k);
+  const weak = foe.weak === suit;
+  const bane = !!weapon && weapon.line === foe.bane;
   const prev = trail[trail.length - 1];
   const met = card.reps == null || reps >= card.reps;
   const crit = record;
@@ -294,10 +296,12 @@ function strike(state, trail, card, reps, record, skip = []) {
   const suits = new Set(trail.map(t => t.suit));
   if (owned.includes('fullhouse') && !suits.has(suit) && suits.size === 4) combos.push('fullhouse');
   for (const id of combos) dmg += COMBOS[id].bonus + perk('combo');
+  // The right kind of weapon for this boss lifts the whole blow.
+  if (bane) dmg *= 1 + BANE_BONUS;
 
   // Each set also knocks out one of the boss's gremlins, which drops iron for the forge.
   const iron = 1 + (crit ? 2 : 0) + (card.boss ? 2 : 0);
-  return { dmg: Math.round(dmg), crit, weak, combos, iron, entry: { suit, run, rec: record, weak } };
+  return { dmg: Math.round(dmg), crit, weak, bane, combos, iron, entry: { suit, run, rec: record, weak } };
 }
 
 // What the set about to be played would hit for, plain and as a record.
@@ -708,7 +712,7 @@ export function logSet(state, hand, reps, now, rng = null) {
   if (hand.i >= hand.steps.length) hand.done = true;
   return {
     record, first: lift.sessions === 0, done: hand.done,
-    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, combos: hit.combos, iron: hit.iron, foeDown, drop,
+    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, bane: hit.bane, combos: hit.combos, iron: hit.iron, foeDown, drop,
   };
 }
 

@@ -198,12 +198,14 @@ function setupScreen() {
 
 function foeStrip({ compact = false, exposed = false } = {}) {
   const info = E.foeInfo(S.foe.k);
+  const keen = E.equipped(S, 'weapon')?.line === info.bane;
   const pct = Math.max(0, Math.round(S.foe.hp / S.foe.max * 100));
   const from = ui.foeShown?.k === S.foe.k ? ui.foeShown.pct : 100;
   ui.foeShown = { k: S.foe.k, pct };
   return `<button class="foe ${info.big ? 'big' : ''} ${compact ? 'compact' : ''}" data-act="foe-info" aria-label="About this boss">
     <span class="crest">${bossSvg(S.foe.k, compact ? 34 : 56)}<i>${suitIcon(info.weak, compact ? 11 : 14)}</i></span>
-    <span class="foe-main"><b>${info.name}${exposed ? '<em>Weak spot</em>' : ''}</b><span class="hp"><i style="width:${from}%" data-w="${pct}"></i></span></span>
+    <span class="foe-main"><b>${info.name}${exposed ? '<em>Weak spot</em>' : ''}${compact && keen ? '<em class="keen">+25%</em>' : ''}</b><span class="hp"><i style="width:${from}%" data-w="${pct}"></i></span>${
+      compact ? '' : `<small class="fear ${keen ? 'on' : ''}">Fears ${WEAPONS[info.bane].many}${keen ? '. Yours hits a quarter harder' : ''}</small>`}</span>
     <span class="foe-hp num">${num(Math.max(0, S.foe.hp))}</span>
   </button>`;
 }
@@ -688,12 +690,17 @@ function sheetView() {
     const pct = Math.max(0, Math.round(S.foe.hp / S.foe.max * 100));
     return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info" role="dialog" aria-label="${info.name}">
       <div class="foe-art ${info.big ? 'big' : ''}">${bossSvg(S.foe.k, 150)}</div>
-      <p class="corner">${suitIcon(info.weak, 18)}<span>${info.big ? 'Season boss' : 'Boss'}, weak to ${suitName(info.weak).toLowerCase()}</span></p>
+      <p class="corner">${suitIcon(info.weak, 18)}<span>${info.big ? 'Season boss' : 'Boss'}, weak to ${suitName(info.weak).toLowerCase()} sets and to ${WEAPONS[info.bane].many}</span></p>
       <h2>${info.name}</h2>
       <p class="taunt">“${info.taunt}”</p>
       <div class="hp tall"><i style="width:${pct}%"></i></div>
       <p class="muted"><b>${num(Math.max(0, S.foe.hp))}</b> of ${num(S.foe.max)} health left. It never heals, however long you are away.</p>
       <ul class="rules ink">
+        <li><b>It fears ${WEAPONS[info.bane].many}</b><span>Fight it with one in hand and every hit lands a quarter harder. ${(() => {
+          if (E.equipped(S, 'weapon')?.line === info.bane) return 'You are holding one.';
+          const best = [4, 3, 2, 1, 0].map(r => ITEMS[`${info.bane}-${r}`]).find(it => S.items[it.id]);
+          return best ? `</span><button class="swap" data-act="equip" data-id="${best.id}">Equip your ${best.name}</button><span>` : 'You do not own one yet.';
+        })()}</span></li>
         <li><b>Every set you log is a hit</b><span>Higher suit levels and gear hit harder. ${suitName(info.weak)} sets hit this one half again as hard.</span></li>
         <li><b>A record is a critical hit</b><span>Double damage. The finisher at the end of a hand hits double too.</span></li>
         <li><b>Every set fells a gremlin</b><span>They drop iron for the forge, and now and then an item.</span></li>
@@ -815,6 +822,7 @@ function nextReveal() {
       <span class="rar">${RARITY[it.rarity]} ${SLOT_NAME[it.slot].toLowerCase()}</span>
       <h2>${it.name}</h2>
       <p>${perkText(it)}</p>
+      ${E.foeInfo(S.foe.k).bane === it.line ? `<p class="rv-note">${E.foeInfo(S.foe.k).name} fears ${WEAPONS[it.line].many}.</p>` : ''}
       ${worn ? '<p class="rv-note">Equipped</p>' : '<button class="btn" data-act="reveal-equip">Equip it</button>'}
       <small>Tap to continue</small>
     </div>`;

@@ -638,7 +638,15 @@ test('each weapon type does its one thing', () => {
   const blank = setup();
   notWeak(blank, 'chest', 'back');
   const base = power(blank, 'chest');
-  const armed = (weapon, prep) => { const s = structuredClone(blank); grant(s, weapon); prep?.(s); return s; };
+  // Each is tested against a boss with no fear of that weapon, so only the weapon's own perk shows.
+  const armed = (weapon, prep) => {
+    const s = structuredClone(blank);
+    grant(s, weapon);
+    const line = weapon.split('-')[0];
+    while (foeInfo(s.foe.k).bane === line || ['chest', 'back'].includes(foeInfo(s.foe.k).weak)) s.foe = { k: s.foe.k + 1, hp: 5000, max: 5000 };
+    prep?.(s);
+    return s;
+  };
 
   const sword = armed('sword-2', benchRecord);
   assert.equal(logSet(sword, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0).dmg, base * 2 + 13, 'sword: records');
@@ -805,4 +813,24 @@ test('a helm makes every hand pay more points', () => {
   assert.equal(a.base, b.base, 'same hand, same play');
   assert.equal(b.xp - (b.bounty?.won ? b.bounty.reward : 0), Math.round(b.base * b.mult * 1.12));
   assert.ok(b.xp > a.xp);
+});
+
+import { WEAPONS } from '../js/data.js';
+
+test('every boss is weak to one kind of weapon, and wielding it makes each hit a quarter harder', () => {
+  for (let k = 0; k < 24; k++) assert.ok(WEAPONS[foeInfo(k).bane], `boss ${k} has no weapon weakness`);
+  const s = setup();
+  notWeak(s, 'chest');
+  const bane = foeInfo(s.foe.k).bane;
+  grant(s, `${bane}-0`);
+  // a second boss that is weak to something else, to compare the same blow against
+  let other = s.foe.k + 1;
+  while (foeInfo(other).bane === bane || foeInfo(other).weak === 'chest') other++;
+  const blow = (k) => { const t = structuredClone(s); t.foe = { k, hp: 5000, max: 5000 }; return logSet(t, tinyHand([{ ex: 'fly', w: 10 }, { ex: 'fly', w: 10 }, { ex: 'fly', w: 10 }, { ex: 'bench-press', w: 20 }].slice(3)), 10, T0); };
+  const plain = blow(other), keen = blow(s.foe.k);
+  assert.equal(plain.bane, false);
+  assert.equal(keen.bane, true);
+  assert.equal(keen.dmg, Math.round(plain.dmg * 1.25));
+  const peek = nextHit(s, tinyHand([{ ex: 'bench-press', w: 20 }]));
+  assert.equal(peek.plain, keen.dmg, 'the preview knows about it too');
 });

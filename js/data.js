@@ -220,21 +220,23 @@ export const HEAVY_THINGS = [
 // ---------- the fight ----------
 // Bosses are the excuses. Every set you log is a hit on the current one; it never heals.
 // Two smaller bosses, then a season boss. weak: sets of that suit hit half again as hard.
+// bane: the kind of weapon it fears. Fight it with one in hand and every hit lands BANE_BONUS harder.
 export const FOES_SMALL = [
-  { name: 'Couch Gravity', taunt: 'Sit down. Just for a minute.', weak: 'chest' },
-  { name: 'The Snooze Button', taunt: 'Nine more minutes will not hurt.', weak: 'biceps' },
-  { name: 'Later Gator', taunt: 'Tomorrow is a great day to start.', weak: 'back' },
-  { name: 'The Scroll Hole', taunt: 'One more video first.', weak: 'triceps' },
-  { name: 'Doctor Too-Tired', taunt: 'You have had such a long day.', weak: 'chest' },
-  { name: 'Captain Comfort', taunt: 'Why would anyone leave this blanket?', weak: 'biceps' },
-  { name: 'The Cold Floor', taunt: 'It is freezing out here. Stay in bed.', weak: 'abs' },
-  { name: 'The Mirror Doubt', taunt: 'Nothing is changing anyway.', weak: 'back' },
+  { name: 'Couch Gravity', taunt: 'Sit down. Just for a minute.', weak: 'chest', bane: 'sword' },
+  { name: 'The Snooze Button', taunt: 'Nine more minutes will not hurt.', weak: 'biceps', bane: 'hammer' },
+  { name: 'Later Gator', taunt: 'Tomorrow is a great day to start.', weak: 'back', bane: 'halberd' },
+  { name: 'The Scroll Hole', taunt: 'One more video first.', weak: 'triceps', bane: 'mace' },
+  { name: 'Doctor Too-Tired', taunt: 'You have had such a long day.', weak: 'chest', bane: 'axe' },
+  { name: 'Captain Comfort', taunt: 'Why would anyone leave this blanket?', weak: 'biceps', bane: 'zweihander' },
+  { name: 'The Cold Floor', taunt: 'It is freezing out here. Stay in bed.', weak: 'abs', bane: 'axe' },
+  { name: 'The Mirror Doubt', taunt: 'Nothing is changing anyway.', weak: 'back', bane: 'mace' },
 ];
+export const BANE_BONUS = 0.25;
 export const FOES_BIG = [
-  { name: 'The One-Month Wall', taunt: 'This is where you usually stop.', weak: 'chest' },
-  { name: 'The Plateau', taunt: 'This is as strong as you get.', weak: 'biceps' },
-  { name: 'Madame Meh', taunt: 'Is any of this even worth it?', weak: 'back' },
-  { name: 'Baron von Tomorrow', taunt: 'See you next week. Or the week after.', weak: 'triceps' },
+  { name: 'The One-Month Wall', taunt: 'This is where you usually stop.', weak: 'chest', bane: 'hammer' },
+  { name: 'The Plateau', taunt: 'This is as strong as you get.', weak: 'biceps', bane: 'halberd' },
+  { name: 'Madame Meh', taunt: 'Is any of this even worth it?', weak: 'back', bane: 'sword' },
+  { name: 'Baron von Tomorrow', taunt: 'See you next week. Or the week after.', weak: 'triceps', bane: 'zweihander' },
 ];
 
 // Combos land by themselves when the sets you play fit the pattern. They drop as reward cards.
@@ -258,17 +260,17 @@ export const FORGE_COST = [0, 40, 110, 280, 700];
 
 // Each weapon type does one thing. values: how much, by rarity.
 export const WEAPONS = {
-  sword:      { name: 'Sword',      perk: 'crit',     values: [4, 8, 13, 19, 28],
+  sword:      { name: 'Sword', many: 'swords',      perk: 'crit',     values: [4, 8, 13, 19, 28],
     names: ['Training Sword', "Soldier's Blade", "Knight's Longsword", 'Runeblade', 'Dawnbreaker'] },
-  zweihander: { name: 'Zweihander', perk: 'finisher', values: [14, 26, 40, 58, 80],
+  zweihander: { name: 'Zweihander', many: 'zweihanders', perk: 'finisher', values: [14, 26, 40, 58, 80],
     names: ['Rusty Zweihander', "Mercenary's Zweihander", "Giant's Zweihander", 'Stormcleaver', 'Zweihander of the Iron Lord'] },
-  hammer:     { name: 'Hammer',     perk: 'opener',   values: [5, 9, 14, 20, 28],
+  hammer:     { name: 'Hammer', many: 'hammers',     perk: 'opener',   values: [5, 9, 14, 20, 28],
     names: ['Wooden Mallet', "Smith's Hammer", 'Warhammer', 'Thunder Maul', 'Wallbreaker'] },
-  axe:        { name: 'Axe',        perk: 'weak',     values: [4, 7, 11, 16, 22],
+  axe:        { name: 'Axe', many: 'axes',        perk: 'weak',     values: [4, 7, 11, 16, 22],
     names: ['Hatchet', 'Battle Axe', 'Double-Bit Axe', 'Frost Reaver', 'The Excuse Cleaver'] },
-  mace:       { name: 'Mace',       perk: 'flat',     values: [1, 2, 3, 4, 6],
+  mace:       { name: 'Mace', many: 'maces',       perk: 'flat',     values: [1, 2, 3, 4, 6],
     names: ['Club', 'Flanged Mace', 'Morning Star', 'Skullshaker', 'The Snooze Smasher'] },
-  halberd:    { name: 'Polearm',    perk: 'combo',    values: [3, 6, 9, 13, 18],
+  halberd:    { name: 'Polearm', many: 'polearms',    perk: 'combo',    values: [3, 6, 9, 13, 18],
     names: ['Pike', 'Halberd', 'Royal Glaive', 'Dragon Lance', "Tomorrow's End"] },
 };
 
