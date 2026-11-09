@@ -1,5 +1,9 @@
 // Screens and interaction. All workout rules live in engine.js.
-import { SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES, COMBOS, GEAR, GEAR_STEP, LEGENDS } from './data.js';
+import {
+  SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES, COMBOS,
+  ITEMS, RARITY, RARITY_COLOR, FORGE_COST, WEAPONS, ARMOR, SLOT_NAME, perkText,
+} from './data.js';
+import { itemIcon, heroSvg, gremlinSvg, bossSvg } from './art.js';
 import * as E from './engine.js';
 
 const KEY = 'irondeck.v1';
@@ -19,7 +23,7 @@ let S = load();
 const ui = {
   screen: S ? 'home' : 'setup', enter: true, sheet: null,
   setup: { bench: 20, curl: 12.5, step: 2.5, max: 30, incline: true, quickChange: false },
-  hand: null, reps: 0, adjust: false, cue: false, hold: null,
+  hand: null, reps: 0, adjust: false, cue: false, hold: null, dropQueue: [], opened: new Set(),
   restEnd: 0, restTotal: 0, restChange: null, summary: null, confirmReset: false, install: null, notice: null,
 };
 let ticker = null;
@@ -94,6 +98,12 @@ function sfx(name) {
       record: [[523, 0, 0.1], [659, 0.09, 0.1], [784, 0.18, 0.1], [1047, 0.27, 0.3]],
       flip: [[392, 0, 0.08], [587, 0.08, 0.08], [784, 0.16, 0.22]],
       win: [[392, 0, 0.12], [523, 0.12, 0.12], [659, 0.24, 0.12], [784, 0.36, 0.34]],
+      charge: [[196, 0, 0.18], [233, 0.16, 0.18], [277, 0.32, 0.18], [330, 0.48, 0.22]],
+      loot0: [[523, 0, 0.12], [659, 0.1, 0.2]],
+      loot1: [[523, 0, 0.1], [659, 0.09, 0.1], [784, 0.18, 0.24]],
+      loot2: [[523, 0, 0.1], [659, 0.08, 0.1], [784, 0.16, 0.1], [1047, 0.24, 0.3]],
+      loot3: [[392, 0, 0.1], [523, 0.08, 0.1], [659, 0.16, 0.1], [784, 0.24, 0.1], [1047, 0.32, 0.12], [1319, 0.42, 0.4]],
+      loot4: [[262, 0, 0.5], [392, 0.0, 0.5], [523, 0.1, 0.12], [659, 0.2, 0.12], [784, 0.3, 0.12], [1047, 0.4, 0.14], [1319, 0.52, 0.14], [1568, 0.64, 0.6]],
     }[name] ?? [];
     for (const [f, at, dur] of notes) {
       const o = actx.createOscillator(), g = actx.createGain();
@@ -126,10 +136,10 @@ function showFx(html, ms) {
   setTimeout(() => { if (mine === fxToken) $fx.innerHTML = ''; }, ms);
 }
 
-function celebrate(text, sub = '', hold = 1300) {
+function celebrate(text, sub = '', hold = 1300, above = '') {
   const colors = SUIT_ORDER.map(s => SUITS[s].color);
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let html = `<div class="shout ${text.length > 14 ? 'long' : ''}">${text}${sub ? `<small>${sub}</small>` : ''}</div>`;
+  let html = `<div class="shoutwrap">${above}<div class="shout ${text.length > 14 ? 'long' : ''}">${text}${sub ? `<small>${sub}</small>` : ''}</div></div>`;
   if (!calm) {
     for (let i = 0; i < 34; i++) {
       const a = Math.random() * Math.PI * 2, d = 90 + Math.random() * 190;
@@ -143,7 +153,8 @@ function celebrate(text, sub = '', hold = 1300) {
 function hitPop(res) {
   if (!res.dmg) return;
   const notes = [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : [])];
-  showFx(`<div class="hit">${res.dmg}${notes.length ? `<small>${notes.join(' + ')}</small>` : ''}</div>`, 950);
+  showFx(`<div class="hit">${res.dmg}${notes.length ? `<small>${notes.join(' + ')}</small>` : ''}</div>
+    <div class="poof">${gremlinSvg(38)}<b>+${res.iron} iron</b></div>`, 950);
 }
 
 function toast(text) {
@@ -191,7 +202,7 @@ function foeStrip({ compact = false, exposed = false } = {}) {
   const from = ui.foeShown?.k === S.foe.k ? ui.foeShown.pct : 100;
   ui.foeShown = { k: S.foe.k, pct };
   return `<button class="foe ${info.big ? 'big' : ''} ${compact ? 'compact' : ''}" data-act="foe-info" aria-label="About this boss">
-    <span class="crest">${suitIcon(info.weak, compact ? 15 : 20)}</span>
+    <span class="crest">${bossSvg(S.foe.k, compact ? 34 : 56)}<i>${suitIcon(info.weak, compact ? 11 : 14)}</i></span>
     <span class="foe-main"><b>${info.name}${exposed ? '<em>Weak spot</em>' : ''}</b><span class="hp"><i style="width:${from}%" data-w="${pct}"></i></span></span>
     <span class="foe-hp num">${num(Math.max(0, S.foe.hp))}</span>
   </button>`;
@@ -364,9 +375,9 @@ function playScreen() {
   // A record is only possible on a card you have played before.
   const canRecord = (S.lifts[c.key]?.sessions ?? 0) > 0;
   if (nh && (S.foe.hp <= nh.plain || (canRecord && S.foe.hp <= nh.crit))) {
-    const legendLeft = foe.big && Object.keys(LEGENDS).some(id => !S.legends.includes(id));
+    const legendLeft = foe.big && Object.values(ITEMS).some(it => it.rarity === 4 && !S.items[it.id]);
     kill = `<p class="kill"><b>${foe.name}</b> has ${num(S.foe.hp)} health left. ${S.foe.hp <= nh.plain ? 'This set finishes it.' : 'A record on this set finishes it.'}${
-      legendLeft && canRecord ? ' Land the final blow as a record and a legendary is yours.' : ''}</p>`;
+      legendLeft && canRecord ? ' Land the final blow as a record and it drops a legendary.' : ''}</p>`;
   }
   const mod = c.mod && MODS[c.mod] ? `<p class="twist"><b>${MODS[c.mod].name}.</b> ${MODS[c.mod].how}</p>` : '';
 
@@ -447,15 +458,20 @@ function lootCard(item, i) {
   } else if (item.type === 'theme') {
     tag = 'New look'; big = THEMES[item.id].name;
     sub = S.settings.theme === item.id ? 'You are wearing it now.' : `<button class="wear" data-act="wear" data-theme="${item.id}">Wear it now</button>`;
-  } else if (item.type === 'gear') {
-    tag = item.tier > 1 ? 'Gear upgrade' : 'New gear'; big = `${GEAR[item.suit]}${item.tier > 1 ? ` ${'I'.repeat(item.tier)}` : ''}`;
-    sub = `${suitIcon(item.suit, 14)} ${suitName(item.suit).toLowerCase()} sets now hit ${GEAR_STEP * item.tier} harder`;
+  } else if (item.type === 'item') {
+    const it = ITEMS[item.id];
+    return `<button class="loot gearloot r${it.rarity} ${ui.opened.has(i) ? 'flipped still' : ''}" data-act="flip" data-item="${it.id}" data-i="${i}" aria-label="Open your reward" style="--rc:${RARITY_COLOR[it.rarity]}">
+      <span class="lootback"><i><span>?</span></i><em>Tap to open</em></span>
+      <span class="lootface">${itemIcon(it.id, 78)}<small>${RARITY[it.rarity]} ${SLOT_NAME[it.slot].toLowerCase()}</small><b>${it.name}</b></span>
+    </button>`;
   } else if (item.type === 'combo') {
     tag = 'New combo'; big = COMBOS[item.id].name; sub = `${COMBOS[item.id].how} Worth ${COMBOS[item.id].bonus} extra damage.`;
+  } else if (item.type === 'iron') {
+    tag = 'Melted down'; big = `+${item.amount} iron`; sub = 'Nothing new at that rarity, so the find goes to the forge.';
   } else {
     tag = 'Jackpot'; big = `+${item.amount}`; sub = 'bonus points, just because';
   }
-  return `<button class="loot" data-act="flip" data-i="${i}" aria-label="Flip your reward card">
+  return `<button class="loot ${ui.opened.has(i) ? 'flipped still' : ''}" data-act="flip" data-i="${i}" aria-label="Flip your reward card">
     <span class="lootback"><i><span>?</span></i><em>Tap to flip</em></span>
     <span class="lootface"><small>${tag}</small><b>${big}</b><span>${sub}</span></span>
   </button>`;
@@ -475,7 +491,7 @@ function finishScreen() {
       <small>Season ${m.newSeason.n} is open</small><b>${m.newSeason.name}</b>
       <p>${m.newSeason.blurb} The table has a new look to match.</p></section>` : '';
   const loot = m.loot.length ? `<section class="loots">
-      <h3>${m.loot.length === 1 ? 'A card for you.' : m.foe.downs.length ? 'Your card, and what the boss dropped.' : 'Double drop. Two cards for you.'}</h3>
+      <h3>${m.loot.length === 1 ? 'A card for you.' : m.foe.downs.length ? 'Your card, and what the boss dropped.' : m.loot.some(l => l.id === 'sword-0') ? 'A card for you, and something to fight with.' : 'Double drop. Two cards for you.'}</h3>
       <div class="lootrow">${m.loot.map(lootCard).join('')}</div></section>`
     : '<p class="sub center">Play three sets or more and every hand ends with a reward card.</p>';
   return `
@@ -485,11 +501,12 @@ function finishScreen() {
       <div><span class="num" id="xp-num" data-to="${m.xp}">+${ui.enter ? 0 : num(m.xp)}</span><small>${multNote}</small></div>
       <div><span class="num">${m.records.length}</span><small>${m.records.length === 1 ? 'new record' : 'new records'}</small></div>
     </div>
-    <p class="facts">${m.sets} ${m.sets === 1 ? 'set' : 'sets'}, ${num(m.kg)} kg lifted${m.minutes ? `, ${m.minutes} min` : ''}${m.level.to > m.level.from ? `. You are now <b>level ${m.level.to}</b>` : ''}</p>
+    <p class="facts">${m.sets} ${m.sets === 1 ? 'set' : 'sets'}, ${num(m.kg)} kg lifted, ${m.iron} iron${m.minutes ? `, ${m.minutes} min` : ''}${m.level.to > m.level.from ? `. You are now <b>level ${m.level.to}</b>` : ''}</p>
     ${m.bounty?.won ? `<p class="bounty won ${m.bounty.gold ? 'gold' : ''}"><b>${m.bounty.gold ? 'Golden bounty won' : 'Bounty won'}</b> ${m.bounty.reward} extra points: you managed to ${bountyText(m.bounty)}</p>` : ''}
     ${m.foe.downs.map(d => `<section class="seasoncard down">
+      <span class="beaten">${bossSvg(d.k, 76)}</span>
       <small>${d.big ? 'Season boss beaten' : 'Boss beaten'}</small><b>${d.name}</b>
-      <p>${d.reward} bonus points and a drop from its pockets.${d.legend ? ` You finished it with a record, so <strong>${LEGENDS[d.legend].name}</strong> is yours: ${LEGENDS[d.legend].how.toLowerCase()}` : ''}</p></section>`).join('')}
+      <p>${d.reward} bonus points and a drop from its pockets.${d.legend ? ' You finished it with a record, so that drop is a <strong>legendary</strong>.' : ''}</p></section>`).join('')}
     <div class="foe-report"><small>${m.foe.downs.length ? 'Next in line' : `This hand hit for ${num(m.foe.dmg)}`}</small>${foeStrip()}</div>
     ${season}
     <section class="lvls">${ups}</section>
@@ -569,28 +586,17 @@ function deckScreen() {
     ? `<li><b>${m.name}</b><span>${m.how}</span></li>` : '<li class="locked"><b>Locked twist</b><span>Drops from a reward card.</span></li>').join('');
   const styles = Object.entries(STYLES).map(([id, st]) => S.unlocked.styles.includes(id)
     ? `<li><b>${st.name}</b><span>${st.how}</span></li>` : '<li class="locked"><b>Locked hand style</b><span>Opens with a new season.</span></li>').join('');
-  const more = (n, one, many, how) => (n > 0 ? `<li class="locked"><b>${n} ${n === 1 ? one : many} still to find</b><span>${how}</span></li>` : '');
-  const w = E.weapon(S);
-  const roman = (n) => (n > 1 ? ` ${'I'.repeat(n)}` : '');
-  const gear = `<li><b>${w.name}</b><span>Your weapon. ${w.crit ? `Records hit ${w.crit} harder.` : 'It upgrades as your lifetime kilos climb.'}${w.next ? ` ${w.next.name} at ${num(w.next.at)} kg lifted.` : ''}</span></li>` +
-    SUIT_ORDER.filter(s => S.gear[s]).map(s =>
-      `<li><b>${suitIcon(s, 14)} ${GEAR[s]}${roman(S.gear[s])}</b><span>${suitName(s)} sets hit ${GEAR_STEP * S.gear[s]} harder.${S.gear[s] < 3 ? ' Can be upgraded.' : ''}</span></li>`).join('') +
-    more(SUIT_ORDER.filter(s => !S.gear[s]).length, 'piece', 'pieces', 'Every boss you beat drops gear.');
   const combos = Object.entries(COMBOS).filter(([id]) => S.unlocked.combos.includes(id))
     .map(([, c]) => `<li><b>${c.name}</b><span>${c.how} Worth ${c.bonus} extra damage.</span></li>`).join('') +
-    more(Object.keys(COMBOS).length - S.unlocked.combos.length, 'combo', 'combos', 'They drop from reward cards and bosses, and land by themselves once you own them.');
-  const legends = Object.entries(LEGENDS).filter(([id]) => S.legends.includes(id))
-    .map(([, l]) => `<li><b>${l.name}</b><span>${l.how}</span></li>`).join('') +
-    more(Object.keys(LEGENDS).length - S.legends.length, 'legendary', 'legendaries', 'Land the final blow on a season boss as a record to claim one.');
+    (Object.keys(COMBOS).length > S.unlocked.combos.length
+      ? `<li class="locked"><b>${Object.keys(COMBOS).length - S.unlocked.combos.length} still to find</b><span>They drop from reward cards, and land by themselves once you own them.</span></li>` : '');
   return `
     <header class="top">
       <span class="brand">Your deck</span>
       <span class="chip plain">${S.unlocked.exercises.filter(id => possible.some(e => e.id === id)).length} of ${possible.length} cards</span>
     </header>
     ${suits}
-    <section class="panel dark"><h3>Gear</h3><ul class="rules">${gear}</ul></section>
     <section class="panel dark"><h3>Combos</h3><ul class="rules">${combos}</ul></section>
-    <section class="panel dark"><h3>Legendaries</h3><ul class="rules">${legends}</ul></section>
     <section class="panel dark"><h3>Twists</h3><ul class="rules">${twist}</ul></section>
     <section class="panel dark"><h3>Hand styles</h3><ul class="rules">${styles}</ul></section>`;
 }
@@ -645,8 +651,9 @@ function navBar() {
   const tab = (to, label, glyph) => `<button data-act="tab" data-to="${to}" class="${ui.screen === to ? 'on' : ''}">${glyph}<span>${label}</span></button>`;
   return `<nav class="tabs">
     ${tab('home', 'Table', '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="5" y="3" width="11" height="15" rx="2" transform="rotate(-10 10 10)" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="6" width="11" height="15" rx="2" fill="currentColor"/></svg>')}
-    ${tab('progress', 'Progress', '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20V11h4v9Zm6 0V4h4v16Zm6 0v-6h4v6Z" fill="currentColor"/></svg>')}
+    ${tab('hero', 'Hero', '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 11C5 5 19 5 19 11v8l-7 3-7-3Z" fill="currentColor"/><rect x="7.5" y="11" width="9" height="2.6" rx="1" fill="var(--deep)"/></svg>')}
     ${tab('deck', 'Deck', '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 4h7v7H3Zm11 0h7v7h-7ZM3 13h7v7H3Zm11 0h7v7h-7Z" fill="currentColor"/></svg>')}
+    ${tab('progress', 'Progress', '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20V11h4v9Zm6 0V4h4v16Zm6 0v-6h4v6Z" fill="currentColor"/></svg>')}
   </nav>`;
 }
 
@@ -675,10 +682,12 @@ function sheetView() {
       <button class="quiet" data-act="close-sheet">Keep going</button>
     </div>`;
   }
+  if (ui.sheet?.item) return itemSheet(ui.sheet.item);
   if (ui.sheet === 'foe') {
     const info = E.foeInfo(S.foe.k);
     const pct = Math.max(0, Math.round(S.foe.hp / S.foe.max * 100));
     return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info" role="dialog" aria-label="${info.name}">
+      <div class="foe-art ${info.big ? 'big' : ''}">${bossSvg(S.foe.k, 150)}</div>
       <p class="corner">${suitIcon(info.weak, 18)}<span>${info.big ? 'Season boss' : 'Boss'}, weak to ${suitName(info.weak).toLowerCase()}</span></p>
       <h2>${info.name}</h2>
       <p class="taunt">“${info.taunt}”</p>
@@ -687,8 +696,9 @@ function sheetView() {
       <ul class="rules ink">
         <li><b>Every set you log is a hit</b><span>Higher suit levels and gear hit harder. ${suitName(info.weak)} sets hit this one half again as hard.</span></li>
         <li><b>A record is a critical hit</b><span>Double damage. The finisher at the end of a hand hits double too.</span></li>
+        <li><b>Every set fells a gremlin</b><span>They drop iron for the forge, and now and then an item.</span></li>
         <li><b>Combos land by themselves</b><span>Play the pattern and the bonus is added. Your combos are listed in your deck.</span></li>
-        ${info.big ? '<li><b>Legendary at stake</b><span>Land the final blow on a season boss as a record and you win a legendary.</span></li>' : ''}
+        ${info.big ? '<li><b>Legendary at stake</b><span>Land the final blow on a season boss as a record and it drops a legendary.</span></li>' : ''}
       </ul>
       <button class="quiet" data-act="close-sheet">Close</button>
     </div>`;
@@ -711,13 +721,132 @@ function sheetView() {
   return '';
 }
 
+const IRON = '<svg class="ingot" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 8h12l4 10H2Z" fill="#B5B8C8"/><path d="M6 8h6v10H2Z" fill="#fff" opacity=".35"/></svg>';
+const SLOTS_LEFT = ['weapon', 'hands', 'arms', 'belt'], SLOTS_RIGHT = ['helm', 'chest', 'cloak', 'boots'];
+
+function heroScreen() {
+  const total = Object.keys(ITEMS).length, owned = Object.keys(S.items).filter(id => ITEMS[id]).length;
+  const slot = (key) => {
+    const it = E.equipped(S, key);
+    return `<button class="slot ${it ? `r${it.rarity}` : 'empty'}" data-act="${it ? 'item-info' : 'slot-empty'}" data-id="${it?.id ?? ''}" data-slot="${key}"${it ? ` style="--rc:${RARITY_COLOR[it.rarity]}"` : ''}>
+      ${it ? itemIcon(it.id, 46) : ''}<small>${SLOT_NAME[key]}</small></button>`;
+  };
+  const rung = (id) => {
+    const it = ITEMS[id], have = !!S.items[id];
+    const forgeable = !have && it.rarity > 0 && S.items[`${it.line}-${it.rarity - 1}`] && S.iron >= FORGE_COST[it.rarity];
+    return `<button class="rung r${it.rarity} ${have ? 'have' : 'lack'} ${S.equip[it.slot] === id ? 'worn' : ''} ${forgeable ? 'forgeable' : ''}" data-act="item-info" data-id="${id}"
+      style="--rc:${RARITY_COLOR[it.rarity]}" aria-label="${it.name}${have ? '' : ', not found yet'}">${itemIcon(id, 44)}</button>`;
+  };
+  const line = (key, label) => `<div class="line"><span>${label}</span><div class="rungs">${[0, 1, 2, 3, 4].map(r => rung(`${key}-${r}`)).join('')}</div></div>`;
+  return `
+    <header class="top">
+      <span class="brand">Your hero</span>
+      <span class="chip">${IRON} ${num(S.iron)} iron</span>
+    </header>
+    <section class="stage">
+      <div class="slotcol">${SLOTS_LEFT.map(slot).join('')}</div>
+      <div class="pedestal">${heroSvg(S.equip, { size: 168 })}</div>
+      <div class="slotcol">${SLOTS_RIGHT.map(slot).join('')}</div>
+    </section>
+    <section class="panel dark armory">
+      <h3>Armoury <small>${owned} of ${total}</small></h3>
+      <p class="empty">Tap any item to see it. Gear drops from reward cards, bosses and gremlins, and iron forges the next step up of anything you own.</p>
+      <div class="rarities">${RARITY.map((n, i) => `<span style="--rc:${RARITY_COLOR[i]}">${n}</span>`).join('')}</div>
+      ${Object.entries(WEAPONS).map(([k, w]) => line(k, w.name)).join('')}
+      <hr>
+      ${Object.entries(ARMOR).map(([k, ar]) => line(k, ar.name)).join('')}
+    </section>`;
+}
+
+function itemSheet(id) {
+  const it = ITEMS[id], have = !!S.items[id], worn = S.equip[it.slot] === id;
+  const below = it.rarity > 0 ? ITEMS[`${it.line}-${it.rarity - 1}`] : null;
+  const cost = FORGE_COST[it.rarity];
+  let action;
+  if (have) action = worn ? '<p class="muted">You have this equipped.</p>' : `<button class="btn dark" data-act="equip" data-id="${id}">Equip</button>`;
+  else if (below && S.items[below.id]) {
+    action = S.iron >= cost
+      ? `<button class="btn dark" data-act="forge" data-id="${id}">Forge for ${cost} iron</button><p class="muted">Made from your ${below.name}, which you keep. You have ${num(S.iron)} iron.</p>`
+      : `<p class="muted">Forge it from your ${below.name} for ${cost} iron. You have ${num(S.iron)}: ${num(cost - S.iron)} to go, at a few iron per set.</p>`;
+  } else {
+    action = `<p class="muted">${it.rarity === 4
+      ? 'Not found yet. Finish a season boss with a record and its drop is a legendary. Or work up to it at the forge.'
+      : `Not found yet. It drops from reward cards, bosses and gremlins${below ? `, or forge it once you own the ${below.name}` : ''}.`}</p>`;
+  }
+  return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info itemsheet" role="dialog" aria-label="${it.name}" style="--rc:${RARITY_COLOR[it.rarity]}">
+    <div class="item-art ${have ? '' : 'lack'}">${itemIcon(id, 132)}</div>
+    <p class="rar">${RARITY[it.rarity]} ${SLOT_NAME[it.slot].toLowerCase()}</p>
+    <h2>${it.name}</h2>
+    <p>${perkText(it)}</p>
+    ${action}
+    <button class="quiet" data-act="close-sheet">Close</button>
+  </div>`;
+}
+
+// The moment an item is yours. ids are opened one after another; done runs when the last is dismissed.
+const $rv = document.createElement('div');
+$rv.id = 'reveal';
+document.body.append($rv);
+const rv = { queue: [], id: null, phase: null, timer: null, shownAt: 0, done: null };
+
+function reveal(ids, done) {
+  rv.queue.push(...ids);
+  if (done) rv.done = done;
+  if (!rv.phase) nextReveal();
+}
+function nextReveal() {
+  clearTimeout(rv.timer);
+  const id = rv.queue.shift();
+  if (!id) {
+    rv.phase = null; $rv.className = ''; $rv.innerHTML = '';
+    const done = rv.done; rv.done = null; done?.();
+    return;
+  }
+  const it = ITEMS[id], worn = S.equip[it.slot] === id;
+  rv.id = id; rv.phase = 'charge';
+  $rv.className = `on r${it.rarity} charge`;
+  $rv.style.setProperty('--rc', RARITY_COLOR[it.rarity]);
+  $rv.dataset.act = 'reveal-tap';
+  $rv.innerHTML = `<div class="rv-rays"></div><div class="rv-glow"></div><div class="rv-flash"></div>
+    <div class="rv-card"><span class="lootback"><i><span>?</span></i></span></div>
+    <div class="rv-prize">${itemIcon(id, 210)}</div>
+    <div class="rv-sparks"></div>
+    <div class="rv-text">
+      <span class="rar">${RARITY[it.rarity]} ${SLOT_NAME[it.slot].toLowerCase()}</span>
+      <h2>${it.name}</h2>
+      <p>${perkText(it)}</p>
+      ${worn ? '<p class="rv-note">Equipped</p>' : '<button class="btn" data-act="reveal-equip">Equip it</button>'}
+      <small>Tap to continue</small>
+    </div>`;
+  sfx('charge'); buzz(it.rarity >= 3 ? [30, 60, 30, 60, 30, 60, 30, 60, 30] : [30, 80, 30]);
+  rv.timer = setTimeout(burstReveal, [750, 850, 1000, 1350, 1900][it.rarity]);
+}
+function burstReveal() {
+  if (rv.phase !== 'charge') return;
+  clearTimeout(rv.timer);
+  rv.phase = 'shown'; rv.shownAt = now();
+  const r = ITEMS[rv.id].rarity;
+  $rv.classList.remove('charge'); $rv.classList.add('burst');
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const sparks = $rv.querySelector('.rv-sparks');
+    let html = '';
+    for (let i = 0; i < 16 + r * 12; i++) {
+      const ang = Math.random() * Math.PI * 2, d = 110 + Math.random() * (150 + r * 40), s = 4 + Math.random() * (4 + r);
+      html += `<i style="--dx:${Math.cos(ang) * d}px;--dy:${Math.sin(ang) * d}px;--rot:${Math.random() * 720 - 360}deg;width:${s}px;height:${s}px;animation-delay:${Math.random() * 120}ms;${i % 3 === 0 ? 'background:#fff' : ''}"></i>`;
+    }
+    sparks.innerHTML = html;
+    if (r >= 3) { document.body.classList.add('quake'); setTimeout(() => document.body.classList.remove('quake'), 650); }
+  }
+  sfx(`loot${r}`); buzz([[40], [40, 40, 60], [40, 40, 40, 40, 100], [60, 40, 60, 40, 60, 40, 200], [100, 50, 100, 50, 100, 50, 100, 50, 400]][r]);
+}
+
 // ---------- render loop ----------
 
 const SCREENS = {
   setup: setupScreen, home: homeScreen, deal: dealScreen, play: playScreen, rest: restScreen,
-  finish: finishScreen, progress: progressScreen, deck: deckScreen, settings: settingsScreen,
+  finish: finishScreen, progress: progressScreen, deck: deckScreen, settings: settingsScreen, hero: heroScreen,
 };
-const WITH_TABS = ['home', 'progress', 'deck'];
+const WITH_TABS = ['home', 'hero', 'deck', 'progress'];
 
 function render() {
   applyTheme();
@@ -785,6 +914,8 @@ function startRest(step) {
   ui.restChange = step.change;
   initStepUi();
   go('rest');
+  // A gremlin dropped something during the last sets: open it now, while there is nothing else to do.
+  if (ui.dropQueue.length) reveal(ui.dropQueue.splice(0), render);
 }
 function endRest(chime) {
   if (ui.screen !== 'rest') return;
@@ -800,8 +931,10 @@ function finishNow() {
   keepAwake(false);
   if (!summary.sets) return go('home');
   ui.summary = summary;
+  ui.opened = new Set();
   sfx('win'); buzz([60, 40, 60, 40, 160]);
   go('finish');
+  if (ui.dropQueue.length) reveal(ui.dropQueue.splice(0), render);
 }
 
 function download(name, text) {
@@ -886,7 +1019,8 @@ const actions = {
   done() {
     const st = stepNow();
     if (!st) return;
-    const res = E.logSet(S, hand(), ui.reps, now());
+    const res = E.logSet(S, hand(), ui.reps, now(), rng);
+    if (res.drop) ui.dropQueue.push(res.drop.id);
     save();
     const next = () => {
       if (hand()?.done) return finishNow();
@@ -895,8 +1029,8 @@ const actions = {
     };
     if (res.foeDown) {
       sfx('win'); buzz([60, 40, 60, 40, 60, 40, 220]);
-      const prize = res.foeDown.legend ? `Legendary won: ${LEGENDS[res.foeDown.legend].name}` : res.record ? 'Finished with a record' : 'Boss beaten';
-      celebrate(`${res.foeDown.name} is down`, prize, 1900);
+      const prize = res.foeDown.legend ? 'Finished with a record: legendary drop' : res.record ? 'Finished with a record' : 'Boss beaten';
+      celebrate(`${res.foeDown.name} is down`, prize, 1900, `<div class="downed">${bossSvg(res.foeDown.k, 150)}</div>`);
       $app.classList.add('locked');
       setTimeout(next, 1700);
     } else if (res.record) {
@@ -933,14 +1067,29 @@ const actions = {
   'finish-early'() { finishNow(); },
   'rest-add'() { ui.restEnd += 15000; ui.restTotal += 15; },
   'rest-skip'() { endRest(false); },
-  flip(_, el) {
-    if (el.classList.contains('flipped')) return;
+  flip({ item, i }, el) {
+    if (el.classList.contains('flipped')) return item ? actions['item-info']({ id: item }) : undefined;
     el.classList.add('flipped');
+    ui.opened.add(+i);
+    if (item) return reveal([item], render);
     sfx('flip'); buzz(40);
   },
-  wear({ theme }) { S.settings.theme = theme; save(); applyTheme(); render(); document.querySelectorAll('.loot').forEach(l => l.classList.add('flipped', 'still')); },
+  wear({ theme }) { S.settings.theme = theme; save(); applyTheme(); render(); },
   'card-info'({ id }) { ui.sheet = { card: id }; render(); },
   'foe-info'() { ui.sheet = 'foe'; render(); },
+  'item-info'({ id }) { ui.sheet = { item: id }; render(); },
+  'slot-empty'({ slot }) { toast(`No ${SLOT_NAME[slot].toLowerCase()} yet. Play a hand: bosses and reward cards drop gear.`); },
+  equip({ id }) { E.equip(S, id); save(); sfx('flip'); buzz(30); ui.sheet = null; render(); },
+  forge({ id }) {
+    if (!E.forge(S, id)) return;
+    save(); ui.sheet = null; render();
+    reveal([id], render);
+  },
+  'reveal-tap'() {
+    if (rv.phase === 'charge') burstReveal();
+    else if (now() - rv.shownAt > 450) nextReveal();
+  },
+  'reveal-equip'() { E.equip(S, rv.id); save(); sfx('flip'); nextReveal(); },
   set({ key, val }) {
     S.settings[key] = key === 'theme' ? val : key === 'step' ? +val : val === 'true';
     if (key === 'step') S.settings.min = Math.min(S.settings.min, +val);

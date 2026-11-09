@@ -444,7 +444,7 @@ test('each lift keeps a short log of its best set per session for charting', () 
 });
 
 // ----- third round: bosses, hero, gear, combos -----
-import { migrate, foeInfo, power, weapon } from '../js/engine.js';
+import { migrate, foeInfo, power } from '../js/engine.js';
 
 // A tiny hand with exactly the given cards, one set each, for checking single hits.
 function tinyHand(cards) {
@@ -454,21 +454,6 @@ function tinyHand(cards) {
   };
 }
 const notWeak = (s, ...suits) => { while (suits.includes(foeInfo(s.foe.k).weak)) s.foe = { k: s.foe.k + 1, hp: 5000, max: 5000 }; s.foe.hp = s.foe.max = 5000; };
-
-test('a new game starts with a boss at full health, and an older save gets one on load', () => {
-  const s = setup();
-  assert.ok(s.foe.max > 0);
-  assert.equal(s.foe.hp, s.foe.max);
-  assert.ok(foeInfo(s.foe.k).name);
-  const old = setup();
-  delete old.foe; delete old.foesDown; delete old.gear; delete old.unlocked.combos;
-  old.hands = 9;
-  migrate(old);
-  assert.equal(old.foe.hp, old.foe.max);
-  assert.equal(old.foesDown, 2, 'nine hands already played is worth two bosses');
-  assert.equal(seasonInfo(old).n, 1);
-  assert.deepEqual(old.unlocked.combos, []);
-});
 
 test('every set is a hit: it takes health off the boss, and a set of zero reps does nothing', () => {
   const s = setup();
@@ -480,36 +465,6 @@ test('every set is a hit: it takes health off the boss, and a set of zero reps d
   const b = logSet(s, hand, 0, T0);
   assert.equal(b.dmg, 0);
   assert.equal(s.foe.hp, 5000 - a.dmg);
-});
-
-test('a record is a critical hit, the finisher hits double, and the weak suit takes half again', () => {
-  const s = setup();
-  notWeak(s, 'chest');
-  const base = power(s, 'chest');
-  s.lifts['bench-press'] = { w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] };
-  const crit = logSet(s, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0);
-  assert.equal(crit.crit, true);
-  assert.equal(crit.dmg, base * 2 + weapon(s).crit);
-  const fin = logSet(s, tinyHand([{ ex: 'push-up', key: 'push-up:allout', boss: true, reps: null }]), 20, T0);
-  assert.equal(fin.dmg, base * 2);
-  const weak = foeInfo(s.foe.k).weak;
-  const ex = Object.values(EX).find(e => e.suit === weak);
-  const w = logSet(s, tinyHand([{ ex: ex.id }]), 10, T0);
-  assert.equal(w.dmg, Math.round(power(s, weak) * 1.5));
-});
-
-test('gear and suit levels make that suit hit harder; the dumbbell upgrades with kilos lifted', () => {
-  const s = setup();
-  assert.equal(power(s, 'back'), 10);
-  s.gear.back = 2;
-  assert.equal(power(s, 'back'), 16);
-  s.suitXp.back = 400; // level 4
-  assert.equal(power(s, 'back'), 19);
-  assert.equal(weapon(s).tier, 0);
-  s.tonnage = 16000;
-  assert.equal(weapon(s).tier, 2);
-  assert.ok(weapon(s).crit > 0);
-  assert.ok(weapon(s).next.at > 16000);
 });
 
 test('a combo only lands once you own it: push-pull pays when chest and back sets are back to back', () => {
@@ -541,22 +496,6 @@ test('beating a boss brings the next one at full health, and undo takes the kill
   assert.equal(s.foesDown, 0);
   assert.equal(s.foe.k, 0);
   assert.equal(s.foe.hp, 5);
-});
-
-test('the hand that beats a boss pays bonus points and an extra reward of gear or a combo', () => {
-  const s = setup();
-  const rng = mulberry32(17);
-  s.foe.hp = 30;
-  const hand = dealHand(s, 'full', rng, T0);
-  play(s, hand, T0);
-  const xpBefore = s.xp;
-  const sum = finishHand(s, hand, rng, T0);
-  assert.equal(sum.foe.downs.length, 1);
-  assert.ok(sum.foe.downs[0].reward > 0);
-  assert.equal(s.xp - xpBefore, sum.xp + sum.foe.downs[0].reward);
-  assert.ok(sum.loot.some(l => l.type === 'gear' || l.type === 'combo'), JSON.stringify(sum.loot));
-  assert.ok(sum.foe.dmg > 0);
-  assert.equal(sum.foe.now.hp, s.foe.hp);
 });
 
 test('a boss never heals: months away change nothing', () => {
@@ -607,31 +546,6 @@ test('bosses keep pace with a growing hero: late bosses still take a few hands, 
 
 import { forecast } from '../js/engine.js';
 
-test('finishing a season boss with a record wins a legendary; any other final blow does not', () => {
-  const bench = () => ({ w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] });
-  const a = setup();
-  a.foe = { k: 2, hp: 5, max: 1370 }; // the season boss
-  a.lifts['bench-press'] = bench();
-  const handA = tinyHand([{ ex: 'bench-press', w: 20 }]);
-  const crit = logSet(a, handA, 9, T0);
-  assert.ok(crit.foeDown.legend, 'expected a legendary');
-  assert.deepEqual(a.legends, [crit.foeDown.legend]);
-  assert.equal(undoSet(a, handA), true);
-  assert.deepEqual(a.legends, [], 'undo hands the legendary back');
-
-  const b = setup();
-  b.foe = { k: 2, hp: 5, max: 1370 };
-  const plain = logSet(b, tinyHand([{ ex: 'bench-press', w: 20 }]), 10, T0);
-  assert.equal(plain.foeDown.legend, null, 'no record, no legendary');
-
-  const c = setup();
-  c.foe.hp = 5; // a smaller boss
-  c.lifts['bench-press'] = bench();
-  const small = logSet(c, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0);
-  assert.equal(small.record, true);
-  assert.equal(small.foeDown.legend, null, 'smaller bosses carry no legendary');
-});
-
 test('the forecast adds up a hand before it is played: weak-spot cards and the combos it is sure to land', () => {
   const s = setup();
   let k = 0;
@@ -658,4 +572,237 @@ test('the next-hit preview matches what the set then does, plain and as a record
   assert.equal(logSet(s, hand, 9, T0).dmg, peek.crit);
   assert.equal(nextHit(s, hand).plain, logSet(s, hand, 10, T0).dmg);
   assert.equal(nextHit(s, hand), null);
+});
+
+// ----- fourth round: items, rarities, iron and the forge -----
+import { grant, equip, forge, rollItem, equipped } from '../js/engine.js';
+import { ITEMS, FORGE_COST } from '../js/data.js';
+
+const benchRecord = (s) => { s.lifts['bench-press'] = { w: 20, top: 8, sessions: 1, bests: [{ w: 20, r: 8 }] }; };
+
+test('a new game starts with a boss at full health and empty hands; an older save is brought up to date', () => {
+  const s = setup();
+  assert.equal(s.foe.hp, s.foe.max);
+  assert.deepEqual(s.items, {});
+  assert.equal(s.iron, 0);
+  assert.equal(equipped(s, 'weapon'), null);
+  const old = setup();
+  delete old.foe; delete old.foesDown; delete old.items; delete old.equip; delete old.iron; delete old.unlocked.combos;
+  old.hands = 9;
+  old.gear = { chest: 2, biceps: 0, back: 0, triceps: 0, abs: 1, rest: 0 };
+  old.legends = ['wallbreaker'];
+  migrate(old);
+  assert.equal(old.foe.hp, old.foe.max);
+  assert.equal(old.foesDown, 2, 'nine hands already played is worth two bosses');
+  assert.equal(seasonInfo(old).n, 1);
+  assert.deepEqual(old.unlocked.combos, []);
+  assert.equal(equipped(old, 'chest').rarity, 1, 'tier-two chest gear becomes an uncommon breastplate');
+  assert.equal(equipped(old, 'belt').rarity, 0);
+  assert.ok(equipped(old, 'weapon'), 'an old legendary perk becomes a weapon');
+  assert.equal(old.gear, undefined);
+  assert.equal(old.legends, undefined);
+});
+
+test('a record is a critical hit, the finisher hits double, and the weak suit takes half again', () => {
+  const s = setup();
+  notWeak(s, 'chest');
+  const base = power(s, 'chest');
+  benchRecord(s);
+  const crit = logSet(s, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0);
+  assert.equal(crit.crit, true);
+  assert.equal(crit.dmg, base * 2);
+  const fin = logSet(s, tinyHand([{ ex: 'push-up', key: 'push-up:allout', boss: true, reps: null }]), 20, T0);
+  assert.equal(fin.dmg, base * 2);
+  const weak = foeInfo(s.foe.k).weak;
+  const ex = Object.values(EX).find(e => e.suit === weak);
+  const w = logSet(s, tinyHand([{ ex: ex.id }]), 10, T0);
+  assert.equal(w.dmg, Math.round(power(s, weak) * 1.5));
+});
+
+test('armour strengthens its suit, and the first piece you find for a slot goes straight on', () => {
+  const s = setup();
+  assert.equal(power(s, 'back'), 10);
+  const got = grant(s, 'cloak-2');
+  assert.equal(got.equipped, true);
+  assert.equal(equipped(s, 'cloak').id, 'cloak-2');
+  assert.equal(power(s, 'back'), 13);
+  s.suitXp.back = 400; // level 4
+  assert.equal(power(s, 'back'), 16);
+  assert.equal(grant(s, 'cloak-0').equipped, false, 'a second piece waits in the armoury');
+  assert.equal(equip(s, 'cloak-0'), true);
+  assert.equal(power(s, 'back'), 14);
+  assert.equal(equip(s, 'cloak-4'), false, 'cannot wear what you do not own');
+});
+
+test('each weapon type does its one thing', () => {
+  const blank = setup();
+  notWeak(blank, 'chest', 'back');
+  const base = power(blank, 'chest');
+  const armed = (weapon, prep) => { const s = structuredClone(blank); grant(s, weapon); prep?.(s); return s; };
+
+  const sword = armed('sword-2', benchRecord);
+  assert.equal(logSet(sword, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0).dmg, base * 2 + 13, 'sword: records');
+
+  const zwei = armed('zweihander-1');
+  assert.equal(logSet(zwei, tinyHand([{ ex: 'push-up', key: 'push-up:allout', boss: true, reps: null }]), 20, T0).dmg, base * 2 + 26, 'zweihander: finisher');
+
+  const hammer = armed('hammer-2');
+  const four = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'fly', w: 10 }, { ex: 'push-up' }, { ex: 'floor-press', w: 20 }]);
+  assert.deepEqual([0, 1, 2, 3].map(() => logSet(hammer, four, 10, T0).dmg), [base + 14, base + 14, base + 14, base], 'hammer: first three sets');
+
+  const axe = armed('axe-2', (s) => { let k = 0; while (foeInfo(k).weak !== 'chest') k++; s.foe = { k, hp: 5000, max: 5000 }; });
+  assert.equal(logSet(axe, tinyHand([{ ex: 'bench-press', w: 20 }]), 10, T0).dmg, Math.round(base * 1.5) + 11, 'axe: weak spot');
+
+  const mace = armed('mace-2');
+  assert.equal(logSet(mace, tinyHand([{ ex: 'bench-press', w: 20 }]), 10, T0).dmg, base + 3, 'mace: every set');
+
+  const halberd = armed('halberd-2', (s) => s.unlocked.combos.push('pushpull'));
+  const pair = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'one-arm-row', w: 20 }]);
+  logSet(halberd, pair, 10, T0);
+  assert.equal(logSet(halberd, pair, 10, T0).dmg, power(halberd, 'back') + 8 + 9, 'polearm: combos');
+});
+
+test('iron comes from every set and forges the next rung of a line you own', () => {
+  const s = setup();
+  notWeak(s, 'chest');
+  const hand = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'fly', w: 10 }]);
+  assert.equal(logSet(s, hand, 10, T0).iron, 1);
+  assert.equal(s.iron, 1);
+  assert.equal(logSet(s, hand, 0, T0).iron, 0, 'no reps, no iron');
+  benchRecord(s);
+  assert.equal(logSet(s, tinyHand([{ ex: 'bench-press', w: 20 }]), 9, T0).iron, 3, 'a record pays triple');
+
+  assert.equal(forge(s, 'sword-1'), false, 'cannot forge a line you do not own');
+  grant(s, 'sword-0');
+  s.iron = FORGE_COST[1] - 1;
+  assert.equal(forge(s, 'sword-1'), false, 'not enough iron');
+  s.iron = FORGE_COST[1] + 5;
+  assert.equal(forge(s, 'sword-1'), true);
+  assert.equal(s.iron, 5);
+  assert.ok(s.items['sword-1'] && s.items['sword-0'], 'the old rung stays in the collection');
+  assert.equal(equipped(s, 'weapon').id, 'sword-1', 'forging what you hold upgrades what you hold');
+  s.iron = 9999;
+  assert.equal(forge(s, 'sword-3'), false, 'no skipping rungs');
+  assert.equal(forge(s, 'sword-1'), false, 'already owned');
+});
+
+test('early loot is mostly common and the odds improve as bosses fall', () => {
+  const odds = (down) => {
+    const s = setup();
+    s.foesDown = down;
+    const rng = mulberry32(down + 1);
+    const n = [0, 0, 0, 0, 0];
+    for (let i = 0; i < 3000; i++) n[ITEMS[rollItem(s, rng)].rarity]++;
+    return n.map(x => x / 3000);
+  };
+  const early = odds(0), late = odds(20);
+  assert.ok(early[0] > 0.5, `early commons ${early[0]}`);
+  assert.ok(early[4] < 0.02, `early legendaries ${early[4]}`);
+  assert.ok(late[3] + late[4] > 0.15, `late epics and legendaries ${late[3] + late[4]}`);
+  assert.ok(late[0] < early[0]);
+});
+
+test('a rolled item is always one you lack, and a finished rarity never spills into a better one', () => {
+  const s = setup();
+  const rng = mulberry32(3);
+  const seen = new Set();
+  let empty = 0;
+  for (let i = 0; i < 400; i++) {
+    const id = rollItem(s, rng);
+    if (!id) { empty++; continue; }
+    assert.ok(!seen.has(id), `roll ${i} repeated ${id}`);
+    seen.add(id);
+    grant(s, id);
+  }
+  const owned = (r) => Object.values(ITEMS).filter(it => it.rarity === r && s.items[it.id]).length;
+  assert.equal(owned(0), 13, 'every common turns up');
+  assert.ok(owned(4) <= 3, `with no bosses beaten, legendaries stay rare: got ${owned(4)}`);
+  assert.ok(empty > 100, 'most late rolls come up empty instead of handing out better gear');
+
+  const full = setup();
+  for (const it of Object.values(ITEMS)) if (it.rarity === 4) grant(full, it.id);
+  assert.equal(ITEMS[rollItem(full, rng, { force: 4 })].rarity, 3, 'a forced rarity that is complete falls to the one below');
+});
+
+test('a reward card with nothing new to give melts down into iron for the forge', () => {
+  const s = setup();
+  for (const it of Object.values(ITEMS)) grant(s, it.id);
+  s.foe.hp = 5;
+  const hand = tinyHand([{ ex: 'bench-press', w: 20 }]);
+  logSet(s, hand, 10, T0);
+  const ironBefore = s.iron;
+  const sum = finishHand(s, hand, mulberry32(4), T0);
+  const scrap = sum.loot.find(l => l.type === 'iron');
+  assert.ok(scrap && scrap.amount > 0, JSON.stringify(sum.loot));
+  assert.equal(s.iron, ironBefore + scrap.amount);
+});
+test('the first finished hand hands you a starter sword, already in your grip', () => {
+  const s = setup();
+  const { summary } = fullRound(s, mulberry32(5), T0);
+  assert.ok(summary.loot.some(l => l.type === 'item' && l.id === 'sword-0'), JSON.stringify(summary.loot));
+  assert.equal(equipped(s, 'weapon').id, 'sword-0');
+  const again = fullRound(s, mulberry32(6), T0 + 2 * DAY).summary;
+  assert.ok(!again.loot.some(l => l.id === 'sword-0'), 'only once');
+});
+
+test('the hand that beats a boss pays bonus points and drops an item of uncommon rarity or better', () => {
+  const s = setup();
+  const rng = mulberry32(17);
+  s.foe.hp = 30;
+  const hand = dealHand(s, 'full', rng, T0);
+  play(s, hand, T0);
+  const xpBefore = s.xp;
+  const sum = finishHand(s, hand, rng, T0);
+  assert.equal(sum.foe.downs.length, 1);
+  assert.ok(sum.foe.downs[0].reward > 0);
+  assert.equal(s.xp - xpBefore, sum.xp + sum.foe.downs[0].reward);
+  const drops = sum.loot.filter(l => l.type === 'item' && l.id !== 'sword-0');
+  assert.ok(drops.length >= 1 && ITEMS[drops[0].id].rarity >= 1, JSON.stringify(sum.loot));
+  assert.ok(sum.foe.dmg > 0);
+  assert.equal(sum.foe.now.hp, s.foe.hp);
+  assert.ok(sum.iron > 0);
+});
+
+test('finishing a season boss with a record drops a legendary; any other final blow drops an epic or better', () => {
+  const dropFrom = (prep, reps) => {
+    const s = setup();
+    prep(s);
+    const hand = tinyHand([{ ex: 'bench-press', w: 20 }]);
+    const hit = logSet(s, hand, reps, T0);
+    const sum = finishHand(s, hand, mulberry32(9), T0);
+    return { hit, rarity: Math.max(-1, ...sum.loot.filter(l => l.type === 'item').map(l => ITEMS[l.id].rarity)) };
+  };
+  const big = (s) => { s.foe = { k: 2, hp: 5, max: 1370 }; };
+  const record = dropFrom((s) => { big(s); benchRecord(s); }, 9);
+  assert.equal(record.hit.foeDown.legend, true);
+  assert.equal(record.rarity, 4);
+  const plain = dropFrom(big, 10);
+  assert.equal(plain.hit.foeDown.legend, false);
+  assert.ok(plain.rarity >= 3, `season boss dropped rarity ${plain.rarity}`);
+  const small = dropFrom((s) => { s.foe.hp = 5; benchRecord(s); }, 9);
+  assert.equal(small.hit.foeDown.legend, false, 'smaller bosses carry no legendary');
+});
+
+test('a gremlin sometimes drops an item mid-hand, and undo takes it back', () => {
+  const s = setup();
+  const hand = tinyHand([{ ex: 'bench-press', w: 20 }, { ex: 'fly', w: 10 }]);
+  const lucky = () => 0;
+  const hit = logSet(s, hand, 10, T0, lucky);
+  assert.ok(hit.drop, 'expected a drop');
+  assert.ok(s.items[hit.drop.id]);
+  assert.equal(undoSet(s, hand), true);
+  assert.deepEqual(s.items, {});
+  assert.equal(equipped(s, ITEMS[hit.drop.id].slot), null);
+  assert.equal(s.iron, 0);
+  assert.equal(logSet(s, hand, 10, T0).drop, null, 'no dice, no drop');
+});
+
+test('a helm makes every hand pay more points', () => {
+  const plain = setup(), helmed = setup();
+  grant(helmed, 'helm-2');
+  const a = fullRound(plain, mulberry32(5), T0).summary;
+  const b = fullRound(helmed, mulberry32(5), T0).summary;
+  assert.equal(a.base, b.base, 'same hand, same play');
+  assert.equal(b.xp - (b.bounty?.won ? b.bounty.reward : 0), Math.round(b.base * b.mult * 1.12));
+  assert.ok(b.xp > a.xp);
 });

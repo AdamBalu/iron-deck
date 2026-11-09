@@ -247,26 +247,76 @@ export const COMBOS = {
   fullhouse:  { name: 'Full house', bonus: 60, how: 'Play five different suits in one hand.' },
 };
 
-// One piece of gear per suit, three tiers each. Every tier adds GEAR_STEP damage to that suit's sets.
-export const GEAR_STEP = 3;
-export const GEAR = {
-  chest: 'Chalk', biceps: 'Elbow sleeves', back: 'Lifting straps',
-  triceps: 'Wrist wraps', abs: 'Lifting belt', rest: 'Flat shoes',
+// ---------- loot ----------
+// Thirteen lines of equipment (six weapons, seven pieces of armour), each a ladder of five rarities.
+// Items drop from reward cards, bosses and, now and then, a gremlin. Iron earned from every set
+// forges the next rung of a line you already own.
+export const RARITY = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
+export const RARITY_COLOR = ['#B5B8C8', '#58E0A0', '#4CC9F0', '#C77DFF', '#FFD23F'];
+// Iron needed to forge an item of each rarity from the one below it.
+export const FORGE_COST = [0, 40, 110, 280, 700];
+
+// Each weapon type does one thing. values: how much, by rarity.
+export const WEAPONS = {
+  sword:      { name: 'Sword',      perk: 'crit',     values: [4, 8, 13, 19, 28],
+    names: ['Training Sword', "Soldier's Blade", "Knight's Longsword", 'Runeblade', 'Dawnbreaker'] },
+  zweihander: { name: 'Zweihander', perk: 'finisher', values: [14, 26, 40, 58, 80],
+    names: ['Rusty Zweihander', "Mercenary's Zweihander", "Giant's Zweihander", 'Stormcleaver', 'Zweihander of the Iron Lord'] },
+  hammer:     { name: 'Hammer',     perk: 'opener',   values: [5, 9, 14, 20, 28],
+    names: ['Wooden Mallet', "Smith's Hammer", 'Warhammer', 'Thunder Maul', 'Wallbreaker'] },
+  axe:        { name: 'Axe',        perk: 'weak',     values: [4, 7, 11, 16, 22],
+    names: ['Hatchet', 'Battle Axe', 'Double-Bit Axe', 'Frost Reaver', 'The Excuse Cleaver'] },
+  mace:       { name: 'Mace',       perk: 'flat',     values: [1, 2, 3, 4, 6],
+    names: ['Club', 'Flanged Mace', 'Morning Star', 'Skullshaker', 'The Snooze Smasher'] },
+  halberd:    { name: 'Polearm',    perk: 'combo',    values: [3, 6, 9, 13, 18],
+    names: ['Pike', 'Halberd', 'Royal Glaive', 'Dragon Lance', "Tomorrow's End"] },
 };
 
-// Your weapon is your dumbbell. It upgrades with total kilos lifted; each tier makes records hit harder.
-export const WEAPON_STEP = 4;
-export const WEAPONS = [
-  [0, 'Rusty dumbbell'], [5000, 'Cast-iron dumbbell'], [15000, 'Steel dumbbell'], [40000, 'Chrome dumbbell'],
-  [80000, 'Titanium dumbbell'], [150000, 'Golden dumbbell'], [300000, 'Meteorite dumbbell'],
-];
-
-// Legendaries: land the final blow on a season boss with a record and you take the next one on this list.
-export const LEGENDS = {
-  wallbreaker: { name: 'Wallbreaker', how: 'Records hit 10 harder.' },
-  crown:       { name: 'Crown of Reps', how: 'Every set that meets its target hits 2 harder.' },
-  boots:       { name: 'Gravity Boots', how: 'The finisher hits triple instead of double.' },
-  plate:       { name: 'The Golden Plate', how: 'Every hand pays a quarter more points.' },
-  skin:        { name: 'Thick Skin', how: 'The weak suit hits double instead of half again.' },
-  ironheart:   { name: 'Ironheart', how: 'The first set of every hand is a critical hit.' },
+// Armour: each piece strengthens one suit. The helm pays points instead.
+export const ARMOR = {
+  helm:  { name: 'Helm',        suit: null,      values: [4, 8, 12, 18, 25],
+    names: ['Leather Cap', 'Iron Helm', "Knight's Helm", 'Horned Warhelm', 'Crown of Reps'] },
+  chest: { name: 'Breastplate', suit: 'chest',   values: [1, 2, 3, 5, 7],
+    names: ['Padded Vest', 'Chainmail', 'Steel Breastplate', 'Dragonscale Plate', 'Ironheart'] },
+  arms:  { name: 'Bracers',     suit: 'biceps',  values: [1, 2, 3, 5, 7],
+    names: ['Cloth Wraps', 'Leather Bracers', 'Steel Bracers', 'Runed Armguards', "Titan's Bracers"] },
+  cloak: { name: 'Cloak',       suit: 'back',    values: [1, 2, 3, 5, 7],
+    names: ['Old Blanket', "Traveller's Cloak", "Knight's Cape", 'Shadow Mantle', 'Mantle of the Unbroken'] },
+  hands: { name: 'Gauntlets',   suit: 'triceps', values: [1, 2, 3, 5, 7],
+    names: ['Work Gloves', 'Leather Gloves', 'Steel Gauntlets', 'Spiked Gauntlets', 'Grip of Legends'] },
+  belt:  { name: 'Belt',        suit: 'abs',     values: [1, 2, 3, 5, 7],
+    names: ['Rope Belt', 'Leather Belt', "Champion's Belt", 'Girdle of Might', 'The Golden Plate'] },
+  boots: { name: 'Boots',       suit: 'rest',    values: [1, 2, 3, 5, 7],
+    names: ['Worn Boots', 'Leather Boots', 'Steel Greaves', 'Stormstriders', 'Gravity Boots'] },
 };
+export const SLOT_ORDER = ['weapon', 'helm', 'chest', 'arms', 'hands', 'cloak', 'belt', 'boots'];
+export const SLOT_NAME = { weapon: 'Weapon', ...Object.fromEntries(Object.entries(ARMOR).map(([k, a]) => [k, a.name])) };
+// A line is one ladder of five: a weapon type or an armour slot.
+export const LINES = [...Object.keys(WEAPONS), ...Object.keys(ARMOR)];
+
+// id is "<line>-<rarity>", e.g. "zweihander-4".
+export const ITEMS = {};
+for (const [type, w] of Object.entries(WEAPONS)) {
+  w.names.forEach((name, rarity) => {
+    ITEMS[`${type}-${rarity}`] = { id: `${type}-${rarity}`, line: type, slot: 'weapon', rarity, name, perk: w.perk, value: w.values[rarity] };
+  });
+}
+for (const [slot, a] of Object.entries(ARMOR)) {
+  a.names.forEach((name, rarity) => {
+    ITEMS[`${slot}-${rarity}`] = { id: `${slot}-${rarity}`, line: slot, slot, rarity, name, perk: a.suit ? 'suit' : 'points', suit: a.suit, value: a.values[rarity] };
+  });
+}
+
+export function perkText(item) {
+  const v = item.value;
+  switch (item.perk) {
+    case 'crit': return `Records hit ${v} harder.`;
+    case 'finisher': return `The finisher hits ${v} harder.`;
+    case 'opener': return `The first three sets of every hand hit ${v} harder.`;
+    case 'weak': return `Sets on the boss's weak spot hit ${v} harder.`;
+    case 'flat': return `Every set hits ${v} harder.`;
+    case 'combo': return `Every combo you land pays ${v} more.`;
+    case 'suit': return `${SUITS[item.suit].short ?? SUITS[item.suit].name} sets hit ${v} harder.`;
+    default: return `Every hand pays ${v}% more points.`;
+  }
+}

@@ -2,7 +2,7 @@
 import {
   SUITS, SUIT_ORDER, EXERCISES, EX, MODS, STYLES, LOOT_THEMES,
   SEASONS, WILD_RANGES, HEAVY_THINGS,
-  FOES_SMALL, FOES_BIG, COMBOS, GEAR_STEP, WEAPONS, WEAPON_STEP, LEGENDS,
+  FOES_SMALL, FOES_BIG, COMBOS, ITEMS, FORGE_COST,
 } from './data.js';
 
 const DAY = 86400000;
@@ -44,7 +44,7 @@ export function newState(setup, now) {
     xp: 0, suitXp: zero(), tonnage: 0, hands: 0, loots: 0, records: 0,
     debt: zero(), lifts: {},
     unlocked: { exercises, mods: [], styles: ['pairs'], themes: ['indigo'], combos: [] },
-    foe: spawnFoe(0), foesDown: 0, gear: zero(), legends: [],
+    foe: spawnFoe(0), foesDown: 0, items: {}, equip: {}, iron: 0,
     fresh: [], lastTrained: {}, lastExercises: [], lastStyle: null, lastBoss: null, lastHandAt: null,
     history: [], current: null, pending: null,
   };
@@ -52,8 +52,21 @@ export function newState(setup, now) {
 
 // Brings a save from an earlier version up to date. Safe to run on every load.
 export function migrate(state) {
-  state.gear ??= Object.fromEntries(SUIT_ORDER.map(s => [s, 0]));
-  state.legends ??= [];
+  state.items ??= {};
+  state.equip ??= {};
+  state.iron ??= 0;
+  // The first version of gear was three tiers per suit plus perk-style legendaries: turn those into items.
+  if (state.gear) {
+    for (const [suit, tier] of Object.entries(state.gear)) {
+      for (let r = 0; r < tier; r++) grant(state, `${SUIT_SLOT[suit]}-${r}`);
+      if (tier > 0) equip(state, `${SUIT_SLOT[suit]}-${tier - 1}`);
+    }
+    delete state.gear;
+  }
+  if (state.legends) {
+    if (state.legends.length) grant(state, 'sword-2');
+    delete state.legends;
+  }
   state.unlocked.combos ??= [];
   state.foesDown ??= Math.floor((state.hands ?? 0) / 4);
   state.foe ??= spawnFoe(state.foesDown, state);
@@ -172,38 +185,103 @@ function spawnFoe(k, state) {
   return { k, hp: max, max };
 }
 
-// What one set of this suit hits for before any multipliers.
-export function power(state, suit) {
-  return 10 + (suitLevelFor(state.suitXp[suit]).level - 1) + GEAR_STEP * (state.gear?.[suit] ?? 0);
+// ---------- items ----------
+
+// Which armour slot strengthens which suit.
+const SUIT_SLOT = { chest: 'chest', biceps: 'arms', back: 'cloak', triceps: 'hands', abs: 'belt', rest: 'boots' };
+
+export function equipped(state, slot) {
+  const id = state.equip?.[slot];
+  return id ? ITEMS[id] ?? null : null;
 }
 
-export function weapon(state) {
-  let tier = 0;
-  WEAPONS.forEach(([at], i) => { if (state.tonnage >= at) tier = i; });
-  const next = WEAPONS[tier + 1];
-  return {
-    tier, name: WEAPONS[tier][1],
-    crit: WEAPON_STEP * tier + (state.legends?.includes('wallbreaker') ? 10 : 0),
-    next: next ? { at: next[0], name: next[1] } : null,
-  };
+// Adds an item to the collection. The first piece found for an empty slot goes straight on.
+export function grant(state, id) {
+  const item = ITEMS[id];
+  if (!item) return null;
+  const isNew = !state.items[id];
+  state.items[id] = 1;
+  const worn = !state.equip[item.slot];
+  if (worn) state.equip[item.slot] = id;
+  return { id, isNew, equipped: worn };
+}
+
+export function equip(state, id) {
+  const item = ITEMS[id];
+  if (!item || !state.items[id]) return false;
+  state.equip[item.slot] = id;
+  return true;
+}
+
+// Spends iron to make the next rung of a line, given the rung below it.
+export function forge(state, id) {
+  const item = ITEMS[id];
+  if (!item || item.rarity === 0 || state.items[id]) return false;
+  const below = `${item.line}-${item.rarity - 1}`;
+  const cost = FORGE_COST[item.rarity];
+  if (!state.items[below] || state.iron < cost) return false;
+  state.iron -= cost;
+  state.items[id] = 1;
+  if (state.equip[item.slot] === below) state.equip[item.slot] = id;
+  return true;
+}
+
+// Rarity odds improve with every boss beaten. min: lowest rarity allowed.
+function rollRarity(state, rng, min = 0) {
+  const beaten = state.foesDown ?? 0;
+  const odds = [
+    Math.max(5, 60 - 6 * beaten), 30, Math.min(30, 8 + 2 * beaten),
+    Math.min(20, 1.5 + beaten), Math.min(4, 0.3 + 0.2 * beaten),
+  ].map((w, r) => (r < min ? 0 : w));
+  let roll = rng() * odds.reduce((a, b) => a + b, 0);
+  for (let r = 0; r < odds.length; r++) {
+    if (!odds[r]) continue;
+    roll -= odds[r];
+    if (roll <= 0) return r;
+  }
+  return odds.length - 1;
+}
+
+// Picks an item you do not own yet (without granting it). A rarity you have completed falls to the
+// one below, never to a better one, so the top tiers stay earned. Null when nothing is left to give.
+export function rollItem(state, rng, { min = 0, force = null } = {}) {
+  const want = force ?? rollRarity(state, rng, min);
+  const lacking = (r) => Object.values(ITEMS).filter(it => it.rarity === r && !state.items[it.id]);
+  for (let r = want; r >= 0; r--) {
+    const pool = lacking(r);
+    if (pool.length) return pick(rng, pool).id;
+  }
+  return null;
+}
+
+// What one set of this suit hits for before any multipliers.
+export function power(state, suit) {
+  return 10 + (suitLevelFor(state.suitXp[suit]).level - 1) + (equipped(state, SUIT_SLOT[suit])?.value ?? 0);
 }
 
 // One set against the current boss. trail is what has been played so far this hand.
 // Pure: returns the hit and the entry to append to the trail, changes nothing.
 function strike(state, trail, card, reps, record, skip = []) {
-  if (!(reps > 0)) return { dmg: 0, crit: false, weak: false, combos: [], entry: null };
+  if (!(reps > 0)) return { dmg: 0, crit: false, weak: false, combos: [], iron: 0, entry: null };
   const suit = EX[card.ex].suit;
-  const has = (id) => !!state.legends?.includes(id);
+  const weapon = equipped(state, 'weapon');
+  const perk = (kind) => (weapon?.perk === kind ? weapon.value : 0);
   const owned = (state.unlocked.combos ?? []).filter(c => !skip.includes(c));
   const weak = foeInfo(state.foe.k).weak === suit;
   const prev = trail[trail.length - 1];
   const met = card.reps == null || reps >= card.reps;
-  const crit = record || (has('ironheart') && trail.length === 0);
+  const crit = record;
 
-  let dmg = power(state, suit) + (met && has('crown') ? 2 : 0);
-  if (weak) dmg *= has('skin') ? 2 : 1.5;
-  if (card.boss) dmg *= has('boots') ? 3 : 2;
-  if (crit) dmg = dmg * 2 + weapon(state).crit;
+  let dmg = power(state, suit);
+  if (weak) dmg *= 1.5;
+  if (card.boss) dmg *= 2;
+  if (crit) dmg *= 2;
+  // The weapon's bonus goes on top, after the multipliers.
+  dmg += perk('flat');
+  if (crit) dmg += perk('crit');
+  if (card.boss) dmg += perk('finisher');
+  if (weak) dmg += perk('weak');
+  if (trail.length < 3) dmg += perk('opener');
 
   const combos = [];
   const beside = (a, b) => !!prev && ((prev.suit === a && suit === b) || (prev.suit === b && suit === a));
@@ -215,9 +293,11 @@ function strike(state, trail, card, reps, record, skip = []) {
   if (owned.includes('secondwind') && record && trail.some(t => t.rec)) combos.push('secondwind');
   const suits = new Set(trail.map(t => t.suit));
   if (owned.includes('fullhouse') && !suits.has(suit) && suits.size === 4) combos.push('fullhouse');
-  for (const id of combos) dmg += COMBOS[id].bonus;
+  for (const id of combos) dmg += COMBOS[id].bonus + perk('combo');
 
-  return { dmg: Math.round(dmg), crit, weak, combos, entry: { suit, run, rec: record, weak } };
+  // Each set also knocks out one of the boss's gremlins, which drops iron for the forge.
+  const iron = 1 + (crit ? 2 : 0) + (card.boss ? 2 : 0);
+  return { dmg: Math.round(dmg), crit, weak, combos, iron, entry: { suit, run, rec: record, weak } };
 }
 
 // What the set about to be played would hit for, plain and as a record.
@@ -585,7 +665,8 @@ export function currentStep(hand, quickChange = false) {
   };
 }
 
-export function logSet(state, hand, reps, now) {
+// rng is optional: pass one to let a gremlin occasionally drop an item.
+export function logSet(state, hand, reps, now, rng = null) {
   const s = hand.steps[hand.i];
   if (!s) return null;
   const card = hand.blocks[s.b].cards[s.c];
@@ -593,8 +674,10 @@ export function logSet(state, hand, reps, now) {
   const known = state.lifts[card.key];
   hand.undo = {
     key: card.key, existed: !!known, bests: known ? known.bests.map(b => ({ ...b })) : null,
-    foe: { ...state.foe }, foesDown: state.foesDown, legends: [...state.legends],
-    dmg: hand.dmg ?? 0, downs: hand.downs?.length ?? 0, trail: hand.trail?.length ?? 0,
+    foe: { ...state.foe }, foesDown: state.foesDown,
+    items: { ...state.items }, equip: { ...state.equip }, iron: state.iron,
+    dmg: hand.dmg ?? 0, handIron: hand.iron ?? 0, downs: hand.downs?.length ?? 0,
+    drops: hand.drops?.length ?? 0, trail: hand.trail?.length ?? 0,
   };
   const lift = state.lifts[card.key] ??= { w: card.w, top: null, sessions: 0, bests: [], first: null, lastAt: 0 };
   const record = isRecord(lift, card.w, reps);
@@ -604,22 +687,28 @@ export function logSet(state, hand, reps, now) {
   if (hit.entry) trail.push(hit.entry);
   state.foe.hp -= hit.dmg;
   hand.dmg = (hand.dmg ?? 0) + hit.dmg;
+  state.iron += hit.iron;
+  hand.iron = (hand.iron ?? 0) + hit.iron;
   let foeDown = null;
   if (state.foe.hp <= 0) {
-    foeDown = { ...foeInfo(state.foe.k), legend: null };
-    // The final blow on a season boss, landed as a critical hit, takes the next legendary.
-    const legend = foeDown.big && hit.crit ? Object.keys(LEGENDS).find(id => !state.legends.includes(id)) : null;
-    if (legend) { state.legends.push(legend); foeDown.legend = legend; }
+    const info = foeInfo(state.foe.k);
+    // The final blow on a season boss, landed as a record, makes its drop a legendary.
+    foeDown = { ...info, legend: info.big && hit.crit };
     state.foesDown++;
     (hand.downs ??= []).push({ k: state.foe.k, legend: foeDown.legend });
     state.foe = spawnFoe(state.foe.k + 1, state);
+  }
+  let drop = null;
+  if (rng && hit.dmg > 0 && rng() < (hit.crit ? 0.035 : 0.012)) {
+    const id = rollItem(state, rng);
+    if (id) { drop = grant(state, id); (hand.drops ??= []).push(id); }
   }
   card.sets.push({ w: card.w, r: reps, rec: record, d: hit.dmg });
   hand.i++;
   if (hand.i >= hand.steps.length) hand.done = true;
   return {
     record, first: lift.sessions === 0, done: hand.done,
-    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, combos: hit.combos, foeDown,
+    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, combos: hit.combos, iron: hit.iron, foeDown, drop,
   };
 }
 
@@ -632,9 +721,11 @@ export function undoSet(state, hand) {
   if (!u.existed) delete state.lifts[u.key];
   else state.lifts[u.key].bests = u.bests;
   if (u.foe) {
-    state.foe = u.foe; state.foesDown = u.foesDown; state.legends = u.legends;
+    state.foe = u.foe; state.foesDown = u.foesDown;
+    if (u.items) { state.items = u.items; state.equip = u.equip; state.iron = u.iron; hand.iron = u.handIron; }
     hand.dmg = u.dmg;
     if (hand.downs) hand.downs.length = u.downs;
+    if (hand.drops) hand.drops.length = u.drops ?? 0;
     if (hand.trail) hand.trail.length = u.trail;
   }
   hand.i--;
@@ -710,30 +801,37 @@ function progress(lift, card, settings) {
   }
 }
 
+// bossDrop: false for an ordinary reward card, or { min, force } for what a beaten boss leaves behind.
 function drawLoot(state, rng, bossDrop = false) {
   const s = state.settings;
   const locked = {
     exercise: EXERCISES.filter(e => !state.unlocked.exercises.includes(e.id) && (s.incline || !e.incline)),
     mod: Object.keys(MODS).filter(m => !state.unlocked.mods.includes(m)),
     theme: LOOT_THEMES.filter(t => !state.unlocked.themes.includes(t)),
-    gear: SUIT_ORDER.filter(k => (state.gear[k] ?? 0) < 3),
+    item: Object.values(ITEMS).filter(it => !state.items[it.id]),
     combo: Object.keys(COMBOS).filter(c => !state.unlocked.combos.includes(c)),
   };
   const drawOne = (n) => {
     let type;
-    if (bossDrop) type = locked.combo.length && (!locked.gear.length || rng() < 0.35) ? 'combo' : 'gear';
+    if (bossDrop) type = 'item';
     else if (n === 0 || n === 2) type = 'exercise';
     else if (n === 1) type = 'mod';
     else {
       const r = rng();
-      type = r < 0.5 ? 'exercise' : r < 0.64 ? 'gear' : r < 0.72 ? 'combo' : r < 0.82 ? 'mod' : r < 0.9 ? 'theme' : 'points';
+      type = r < 0.4 ? 'exercise' : r < 0.7 ? 'item' : r < 0.78 ? 'combo' : r < 0.86 ? 'mod' : r < 0.92 ? 'theme' : 'points';
     }
-    if (type !== 'points' && !locked[type].length) type = ['exercise', 'gear', 'combo', 'mod', 'theme'].find(t => locked[t].length) ?? 'points';
-    if (type === 'gear') {
-      const suit = pickWeighted(rng, locked.gear, k => SUITS[k].weight);
-      state.gear[suit] = (state.gear[suit] ?? 0) + 1;
-      if (state.gear[suit] >= 3) locked.gear.splice(locked.gear.indexOf(suit), 1);
-      return { type, suit, tier: state.gear[suit] };
+    // An item card is always possible: with nothing new to give it pays iron.
+    if (type !== 'points' && type !== 'item' && !locked[type].length) type = ['exercise', 'item', 'combo', 'mod', 'theme'].find(t => locked[t].length) ?? 'points';
+    if (type === 'item') {
+      const id = rollItem(state, rng, bossDrop || {});
+      // Nothing new at that rarity: the find is melted down for the forge instead.
+      if (!id) {
+        const amount = bossDrop ? 60 : 25;
+        state.iron += amount;
+        return { type: 'iron', amount };
+      }
+      locked.item = locked.item.filter(it => it.id !== id);
+      return { type, id, equipped: grant(state, id).equipped };
     }
     if (type === 'combo') {
       const id = pick(rng, locked.combo);
@@ -808,8 +906,8 @@ export function finishHand(state, hand, rng, now) {
       : played.some(c => c.boss && c.sets.some(s => s.rec));
     bounty = { ...b, won };
   }
-  const plate = !!state.legends?.includes('plate');
-  const xp = Math.round(base * (hand.mult ?? 1) * (plate ? 1.25 : 1)) + (bounty?.won ? bounty.reward : 0);
+  const pointsBonus = equipped(state, 'helm')?.value ?? 0; // percent
+  const xp = Math.round(base * (hand.mult ?? 1) * (1 + pointsBonus / 100)) + (bounty?.won ? bounty.reward : 0);
   state.xp += xp;
   state.tonnage += kg;
   state.records += records.length;
@@ -833,6 +931,10 @@ export function finishHand(state, hand, rng, now) {
     const usedEx = played.map(c => c.ex);
     state.fresh = state.fresh.filter(f => !usedEx.includes(f) && !usedMods.includes(f));
     loot = drawLoot(state, rng);
+    // Nobody fights bare-handed for long: the first finished hand comes with a starter sword.
+    if (!Object.values(ITEMS).some(it => it.slot === 'weapon' && state.items[it.id])) {
+      loot.push({ type: 'item', id: 'sword-0', equipped: grant(state, 'sword-0').equipped });
+    }
   }
 
   // Bosses beaten during this hand: bonus points and a guaranteed drop each.
@@ -840,7 +942,7 @@ export function finishHand(state, hand, rng, now) {
   let foePoints = 0;
   for (const d of downs) {
     foePoints += d.reward;
-    loot.push(...drawLoot(state, rng, true));
+    loot.push(...drawLoot(state, rng, { min: d.big ? 3 : 1, force: d.legend ? 4 : null }));
   }
   state.xp += foePoints;
   // Running average of what one set hits for, used to size the next boss.
@@ -866,7 +968,7 @@ export function finishHand(state, hand, rng, now) {
   }
   const minutes = hand.startedAt ? Math.max(1, Math.round((now - hand.startedAt) / 60000)) : 0;
   const summary = {
-    xp, base, mult: hand.mult ?? 1, plate, sets, kg, minutes, records, levelUps, loot, newSeason, counted, bounty, foe,
+    xp, base, mult: hand.mult ?? 1, pointsBonus, iron: hand.iron ?? 0, drops: hand.drops ?? [], sets, kg, minutes, records, levelUps, loot, newSeason, counted, bounty, foe,
     complete: !!hand.done, level: { from: before.level, to: levelFor(state.xp).level },
   };
   if (sets > 0) {

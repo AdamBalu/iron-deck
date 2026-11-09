@@ -9,7 +9,9 @@ Dumbbell workouts dealt as a hand of cards, fresh every time. Built for a bench 
 - Every hand ends with a reward card: a new exercise, a new twist, or a new look.
 - Each new season changes the rep ranges, the hand styles and the colours.
 - Every set you log is a hit on the current boss. Records are critical hits, and a boss never heals.
-- Three bosses make a season. Beating them drops gear and combos; finishing a season boss with a record wins a legendary.
+- Three bosses make a season. Beating one drops gear; finishing a season boss with a record drops a legendary.
+- Gear comes in five rarities across six weapon types and seven armour slots, and shows on your hero.
+- Every set also earns iron, which forges the next rarity up of anything you own.
 - Each hand has an optional bounty for extra points. Missing it costs nothing.
 - The progress screen shows how much stronger you are than in your first sessions.
 
@@ -37,5 +39,6 @@ npm test
 
 - `js/data.js`: the cards, twists, hand styles, seasons and looks.
 - `js/engine.js`: dealing, targets, records, points and rewards. No DOM.
+- `js/art.js`, `js/art-bosses.js`: weapons, armour, the hero and the bosses, drawn in SVG.
 - `js/app.js`: the screens.
 - `sw.js`: offline support.
