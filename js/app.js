@@ -32,16 +32,21 @@ const isDb = (ex) => ex.kind === 'db1' || ex.kind === 'db2';
 const hand = () => S.current;
 const stepNow = () => E.currentStep(S.current, S.settings.quickChange);
 
+// Each suit mark is a flat shape plus one lighter facet, so it reads as a cut gem rather than a sticker.
 const SHAPES = {
-  chest: '<path d="M12 1.5 22.5 12 12 22.5 1.5 12Z"/>',
-  biceps: '<circle cx="12" cy="12" r="10"/>',
-  back: '<path d="M12 2.5 22.5 21h-21Z"/>',
-  triceps: '<rect x="3" y="3" width="18" height="18" rx="3"/>',
-  abs: '<path d="M12 1.5 21 6.8v10.4l-9 5.3-9-5.3V6.8Z"/>',
-  rest: '<path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7Z"/>',
+  chest: ['M12 1.5 22.5 12 12 22.5 1.5 12Z', 'M12 1.5 1.5 12H12Z'],
+  biceps: ['M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z', 'M12 2A10 10 0 0 0 2 12h10Z'],
+  back: ['M12 2.5 22.5 21h-21Z', 'M12 2.5 1.5 21H12Z'],
+  triceps: ['M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z', 'M6 3h12.8L3 18.8V6a3 3 0 0 1 3-3Z'],
+  abs: ['M12 1.5 21 6.8v10.4l-9 5.3-9-5.3V6.8Z', 'M12 1.5 3 6.8v10.4l9-5.2Z'],
+  rest: ['M9 2h6v7h7v6h-7v7H9v-7H2V9h7Z', 'M9 2h6v7H9Zm-7 7h7v6H2Z'],
 };
 const suitIcon = (s, size = 16) =>
-  `<svg class="suit" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${SUITS[s].color}" aria-hidden="true">${SHAPES[s]}</svg>`;
+  `<svg class="suit" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${SHAPES[s][0]}" fill="${SUITS[s].color}"/><path d="${SHAPES[s][1]}" fill="#fff" opacity=".32"/></svg>`;
+const ICON = {
+  back: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14.5 5 8 12l6.5 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  more: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>',
+};
 const suitName = (s) => SUITS[s].short ?? SUITS[s].name;
 
 function listWords(items) {
@@ -232,23 +237,27 @@ function dealScreen() {
   const style = STYLES[h.style];
   let loaded = null, i = 0;
   const blocks = h.blocks.map((b) => {
+    // What to put on the dumbbells for this block, shown once in its heading.
+    const weights = [...new Set(b.cards.filter(c => isDb(EX[c.ex])).map(c => c.w))];
+    let load = '';
+    if (weights.length > 1) load = `<span class="load">${weights.map(kg).join(' and ')} kg</span>`;
+    else if (weights.length && weights[0] !== loaded) load = `<span class="load">${loaded == null ? 'Load' : 'Change to'} ${kg(weights[0])} kg</span>`;
+    if (weights.length) loaded = weights[weights.length - 1];
     const rows = b.cards.map((c) => {
       const ex = EX[c.ex];
-      let load = '';
-      if (isDb(ex) && c.w !== loaded) { load = `<span class="load">${loaded == null ? 'Load' : 'Change to'} ${kg(c.w)} kg</span>`; loaded = c.w; }
-      return `${load}<li class="mini" style="--i:${i++}">
-        ${suitIcon(ex.suit, 18)}
+      return `<li class="mini" style="--i:${i++}">
+        ${suitIcon(ex.suit, 20)}
         <div><b>${ex.name}</b>${c.mod && MODS[c.mod] ? `<em>${MODS[c.mod].name}</em>` : ''}${state(c)}</div>
         <span class="tgt">${targetText(c)}</span>
       </li>`;
     }).join('');
     return `<section class="block ${b.boss ? 'boss' : ''} ${b.cards.length > 1 ? 'joined' : ''}">
-      <h3>${blockLabel(b)}</h3><ul>${rows}</ul></section>`;
+      <h3><span>${blockLabel(b)}</span>${load}</h3><ul>${rows}</ul></section>`;
   }).join('');
   function state(c) { return c.first && S.hands ? '<em class="new">New to you</em>' : c.bumpedFrom != null ? '<em class="new">Heavier than last time</em>' : ''; }
   return `
     <header class="top">
-      <button class="icon" data-act="go-home" aria-label="Back">←</button>
+      <button class="icon" data-act="go-home" aria-label="Back">${ICON.back}</button>
       <span class="chip plain">${E.handCards(h).length} cards, about ${h.estMin} min</span>
     </header>
     <h1 class="title">${h.mode === 'quick' ? 'Quick hand' : style.name}</h1>
@@ -324,7 +333,7 @@ function playScreen() {
   } else {
     entry = `<div class="reps">
         <button data-act="reps" data-d="-1" aria-label="Fewer">−</button>
-        <output>${ui.reps} ${timed ? 'sec' : ui.reps === 1 ? 'rep' : 'reps'}</output>
+        <output class="${ui.bump ? 'bump' : ''}"><b>${ui.reps}</b> ${timed ? 'sec' : ui.reps === 1 ? 'rep' : 'reps'}</output>
         <button data-act="reps" data-d="1" aria-label="More">+</button>
       </div>
       ${timed ? '<button class="btn line" data-act="hold-start">Start the clock</button>' : ''}
@@ -333,9 +342,10 @@ function playScreen() {
   return `
     <header class="playbar">
       <div class="dots">${dots}</div>
-      <button class="icon" data-act="menu" aria-label="More options">⋯</button>
+      <button class="icon" data-act="menu" aria-label="More options">${ICON.more}</button>
     </header>
     <article class="face ${c.boss ? 'bossface' : ''}">
+      <div class="pip">${suitIcon(ex.suit, 190)}</div>
       <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Boss card' : `${suitName(ex.suit)} card`}</span>
         <button class="how" data-act="toggle-cue">${ui.cue ? 'Hide tips' : 'How to do it'}</button></div>
       <h2>${ex.name}</h2>
@@ -357,12 +367,17 @@ function restScreen() {
   return `
     <header class="playbar">
       <div class="dots">${hand().steps.map((_, i) => `<span class="${i < st.index ? 'done' : i === st.index ? 'now' : ''}"></span>`).join('')}</div>
-      <button class="icon" data-act="menu" aria-label="More options">⋯</button>
+      <button class="icon" data-act="menu" aria-label="More options">${ICON.more}</button>
     </header>
     <div class="resting">
-      <p class="lead">Rest</p>
-      <div class="num" id="rest-num">${Math.max(0, Math.ceil((ui.restEnd - now()) / 1000))}</div>
-      <div class="bar big"><i id="rest-bar"></i></div>
+      <div class="ring">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="track" cx="100" cy="100" r="90"/>
+          <circle class="prog" id="rest-ring" cx="100" cy="100" r="90" pathLength="100"/>
+        </svg>
+        <p class="lead">Rest</p>
+        <div class="num" id="rest-num">${Math.max(0, Math.ceil((ui.restEnd - now()) / 1000))}</div>
+      </div>
       ${change}
       <div class="nextup">
         <small>Next up</small>
@@ -490,7 +505,7 @@ function deckScreen() {
     return `<section class="decksuit">
       <h3>${suitIcon(s)} ${suitName(s)} <small>${have} of ${cards.length}</small></h3>
       <div class="grid">${cards.map(e => owned.has(e.id)
-        ? `<button class="dcard ${S.fresh.includes(e.id) ? 'fresh' : ''}" data-act="card-info" data-id="${e.id}" style="--c:${SUITS[s].color}"><b>${e.name}</b>${S.fresh.includes(e.id) ? '<em>New</em>' : ''}</button>`
+        ? `<button class="dcard ${S.fresh.includes(e.id) ? 'fresh' : ''}" data-act="card-info" data-id="${e.id}" style="--c:${SUITS[s].color}">${suitIcon(s, 15)}<b>${e.name}</b>${S.fresh.includes(e.id) ? '<em>New</em>' : ''}</button>`
         : `<div class="dcard locked" style="--c:${SUITS[s].color}"><i></i></div>`).join('')}</div>
     </section>`;
   }).join('');
@@ -529,7 +544,7 @@ function settingsScreen() {
     `<button data-act="set" data-key="theme" data-val="${id}" class="swatch ${s.theme === id ? 'on' : ''}" style="--c:${THEMES[id].table};--g:${THEMES[id].gold}">${THEMES[id].name}</button>`).join('');
   return `
     <header class="top">
-      <button class="icon" data-act="tab" data-to="progress" aria-label="Back">←</button>
+      <button class="icon" data-act="tab" data-to="progress" aria-label="Back">${ICON.back}</button>
       <span class="brand">Settings</span><span></span>
     </header>
     ${ui.notice ? `<p class="banner">${ui.notice}</p>` : ''}
@@ -668,9 +683,9 @@ function startRestTicker() {
     const whole = Math.ceil(left);
     if (lastWhole != null && whole !== lastWhole && whole >= 1 && whole <= 3) sfx('tick');
     lastWhole = whole;
-    const n = document.getElementById('rest-num'), bar = document.getElementById('rest-bar');
+    const n = document.getElementById('rest-num'), ring = document.getElementById('rest-ring');
     if (n) n.textContent = Math.max(0, Math.ceil(left));
-    if (bar) bar.style.width = `${Math.max(0, Math.min(100, left / ui.restTotal * 100))}%`;
+    if (ring) ring.style.strokeDashoffset = 100 - Math.max(0, Math.min(100, left / ui.restTotal * 100));
     if (left <= 0) endRest(true);
   };
   tick();
@@ -750,7 +765,9 @@ const actions = {
   reps({ d }) {
     const timed = EX[stepNow().card.ex].kind === 'time';
     ui.reps = Math.max(0, ui.reps + +d * (timed ? 5 : 1));
+    ui.bump = true;
     render();
+    ui.bump = false;
   },
   'toggle-adjust'() { ui.adjust = !ui.adjust; render(); },
   'toggle-cue'() { ui.cue = !ui.cue; render(); },
