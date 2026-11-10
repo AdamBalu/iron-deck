@@ -912,3 +912,93 @@ body.quake #app, body.quake #reveal { animation: quake .6s linear; }
 .dcard b { flex: 1; min-height: 0; line-height: 1.04; letter-spacing: .01em; text-wrap: nowrap; align-content: center; }
 .cardloot .lootface b { line-height: 1.04; text-wrap: nowrap; }
 @media (min-width: 1100px) { .dcard { aspect-ratio: 5 / 6.8; } .dcard.locked { aspect-ratio: 5 / 6.8; } }
+
+/* ----- arena fights: the fight's standing under the boss ----- */
+.fightbar { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 7px; padding: 6px 12px; border-radius: 11px; text-align: left; background: color-mix(in srgb, var(--pit) 70%, transparent); box-shadow: inset 0 0 0 1px var(--hair); }
+.fightbar b { font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--gold); }
+.fightbar .hp { flex: 1; height: 6px; }
+.fightbar .hp i { background: linear-gradient(90deg, #FF9F1C, var(--gold)); box-shadow: none; }
+.fightbar small { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.fightbar em { font-style: normal; font-size: 11px; font-weight: 700; white-space: nowrap; border-radius: 99px; padding: 2px 8px 1px; color: var(--ink); background: var(--muted); }
+.fightbar em.good { background: #5CF2FF; }
+.fightbar em.bad { background: var(--coral); }
+.fightbar em.ready { background: var(--gold); animation: beat 1s ease-in-out infinite; }
+.fightbar.full .hp i { background: linear-gradient(90deg, var(--gold), #fff); }
+@keyframes beat { 50% { transform: scale(1.07); box-shadow: 0 0 12px var(--gold); } }
+
+/* ----- the arena itself: one exchange, full screen. Timings live in js/arena.js. ----- */
+#arena {
+  position: fixed; inset: 0; z-index: 25; overflow: hidden; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  --hw: clamp(120px, 21vw, 250px); --bw: clamp(150px, 30vw, 340px);
+  animation: ar-in .18s ease-out both;
+}
+#arena.out { animation: ar-out .24s ease-in both; }
+@keyframes ar-in { from { opacity: 0; transform: scale(1.04); } }
+@keyframes ar-out { to { opacity: 0; } }
+.ar-sky { position: absolute; inset: 0; background: radial-gradient(120% 70% at 50% 78%, color-mix(in srgb, var(--coral) 34%, #2A1F66) 0%, #1A1450 46%, #0B0826 100%); transition: filter .25s; }
+#arena.big .ar-sky { background: radial-gradient(120% 70% at 50% 78%, color-mix(in srgb, var(--gold) 34%, #3A2466) 0%, #23164F 46%, #0B0826 100%); }
+#arena.enraged .ar-sky { background: radial-gradient(120% 70% at 50% 78%, #A01D2E 0%, #3B0F3A 48%, #0D0620 100%); }
+#arena.dim .ar-sky, #arena.dim .ar-far, #arena.dim .ar-floor, #arena.dim .ar-boss { filter: brightness(.35) saturate(.6); }
+.ar-far { position: absolute; left: 0; right: 0; bottom: 20%; width: 100%; height: 58%; transition: filter .25s; animation: ar-drift 9s ease-in-out infinite alternate; }
+@keyframes ar-drift { to { transform: translateX(-1.6%) scale(1.03); } }
+.ar-floor { position: absolute; left: -10%; right: -10%; bottom: 0; height: 30%; background: radial-gradient(60% 100% at 50% 0%, rgba(255, 255, 255, .13), transparent 70%), linear-gradient(180deg, #140F3A, #07051A); border-top: 1px solid rgba(255, 255, 255, .14); transition: filter .25s; }
+.ar-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ar-stage { position: absolute; left: 0; right: 0; bottom: 19%; display: flex; align-items: flex-end; justify-content: center; gap: clamp(34px, 13vw, 210px); padding: 0 12px; }
+.ar-hero { position: relative; flex: none; width: var(--hw); height: calc(var(--hw) * 1.65); transform-origin: 50% 96%; }
+.ar-flip { position: absolute; inset: 0; transform: scaleX(-1); }
+.ar-frame { position: absolute; inset: 0; visibility: hidden; }
+.ar-frame.on { visibility: visible; }
+.ar-frame .hero { width: 100%; height: 100%; display: block; }
+.ar-frame .hero .bob { animation-duration: 2.2s; }
+.ar-shield { position: absolute; left: 34%; top: 24%; width: 86%; aspect-ratio: 1; opacity: 0; border-radius: 46% 54% 50% 50%; background: radial-gradient(circle at 60% 45%, rgba(255, 255, 255, .5), rgba(92, 242, 255, .28) 45%, transparent 68%); box-shadow: inset 0 0 0 3px rgba(92, 242, 255, .85), 0 0 34px rgba(92, 242, 255, .8); }
+.ar-boss { position: relative; flex: none; width: var(--bw); height: var(--bw); transform-origin: 50% 90%; transition: filter .25s; }
+.ar-bossart { position: absolute; inset: 0; transform-origin: 50% 92%; }
+.ar-bossart .boss-art { width: 100%; height: 100%; display: block; animation: ar-hover 2.6s ease-in-out infinite; filter: drop-shadow(0 18px 14px rgba(0, 0, 0, .5)); }
+@keyframes ar-hover { 50% { transform: translateY(-3.5%) scale(1.015); } }
+#arena.enraged .ar-bossart .boss-art { animation-duration: 1.1s; filter: drop-shadow(0 0 18px #FF2D2D) drop-shadow(0 18px 14px rgba(0, 0, 0, .5)) saturate(1.3); }
+.ar-aura { position: absolute; inset: -18%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--coral) 46%, transparent), transparent); animation: ar-pulse 2.6s ease-in-out infinite; }
+#arena.big .ar-aura { background: radial-gradient(closest-side, color-mix(in srgb, var(--gold) 42%, transparent), transparent); }
+#arena.enraged .ar-aura { background: radial-gradient(closest-side, rgba(255, 45, 45, .6), transparent); animation-duration: .9s; }
+#arena.won .ar-aura { opacity: 0; transition: opacity .4s; }
+@keyframes ar-pulse { 50% { transform: scale(1.12); opacity: .7; } }
+.ar-nums { position: absolute; left: 0; right: 0; top: -8%; height: 0; }
+.ar-num { position: absolute; transform: translateX(-50%); font-family: var(--display); font-weight: 900; font-size: clamp(44px, 9vw, 96px); line-height: .9; white-space: nowrap; text-align: center; color: var(--coral); text-shadow: 0 4px 0 rgba(0, 0, 0, .55), 0 0 26px rgba(11, 8, 38, .9); animation: ar-num 1.5s var(--ease) both; }
+.ar-num.big { color: var(--gold); font-size: clamp(58px, 12vw, 130px); }
+.ar-num small { display: block; margin-top: 6px; font-family: var(--body); font-size: clamp(11.5px, 1.5vw, 16px); font-weight: 700; letter-spacing: .03em; color: var(--paper); text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
+@keyframes ar-num { 0% { opacity: 0; transform: translate(-50%, 40%) scale(.3); } 12% { opacity: 1; transform: translate(-50%, -18%) scale(1.25); } 22% { transform: translate(-50%, -8%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -60%); } }
+.ar-ult { position: absolute; left: 68%; top: 34%; width: clamp(200px, 40vw, 420px); aspect-ratio: 1; opacity: 0; pointer-events: none; filter: drop-shadow(0 0 30px var(--rc)) brightness(1.3); }
+.ar-ult .icon-art { width: 100%; height: 100%; }
+.ar-hud { position: absolute; left: 50%; top: calc(16px + env(safe-area-inset-top)); width: min(92%, 620px); transform: translateX(-50%); display: grid; gap: 9px; }
+.ar-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.ar-row b { font-family: var(--display); font-weight: 900; font-size: clamp(19px, 3vw, 30px); line-height: 1; color: var(--paper); text-shadow: 0 2px 0 rgba(0, 0, 0, .5); }
+.ar-row.fury { width: 62%; }
+.ar-row.fury b { font-size: 13px; font-family: var(--body); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--gold); }
+.ar-row small { font-size: 12.5px; font-weight: 700; color: var(--paper); white-space: nowrap; min-width: 62px; }
+.ar-bar { position: relative; display: block; height: 14px; border-radius: 99px; background: rgba(0, 0, 0, .55); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .22); overflow: hidden; }
+.ar-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(180deg, #FF8177, var(--coral)); transition: width .7s var(--ease); }
+.ar-bar.hp em { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255, 255, 255, .55); }
+.ar-row.fury .ar-bar { height: 9px; }
+.ar-row.fury .ar-bar i { background: linear-gradient(90deg, #FF9F1C, var(--gold)); }
+.ar-row.fury.full .ar-bar i { background: linear-gradient(90deg, var(--gold), #fff); box-shadow: 0 0 14px var(--gold); }
+.ar-row.fury.full small { color: var(--gold); }
+.ar-banner { position: absolute; left: 0; right: 0; top: 24%; display: grid; justify-items: center; gap: 4px; padding: 12px 16px; text-align: center; opacity: 0; pointer-events: none; }
+.ar-banner.show { animation: ar-banner .9s var(--ease) both; }
+.ar-banner b { font-family: var(--display); font-weight: 900; font-size: clamp(38px, 8vw, 92px); line-height: .95; text-transform: uppercase; letter-spacing: .01em; color: var(--paper); text-shadow: 0 4px 0 rgba(0, 0, 0, .5), 0 0 30px rgba(0, 0, 0, .6); text-wrap: balance; }
+.ar-banner small { font-size: clamp(13px, 1.8vw, 18px); font-weight: 700; color: var(--paper); text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
+.ar-banner.good b { color: #5CF2FF; }
+.ar-banner.bad b, .ar-banner.rage b { color: #FF5A4E; }
+.ar-banner.ult { top: 30%; animation-duration: 1.1s; }
+.ar-banner.ult b { color: var(--rc); font-size: clamp(46px, 10vw, 120px); text-shadow: 0 4px 0 rgba(0, 0, 0, .6), 0 0 36px var(--rc); }
+.ar-banner.ult small { order: -1; letter-spacing: .3em; text-transform: uppercase; color: var(--gold); }
+.ar-banner.win { top: 30%; animation-duration: 2.2s; }
+.ar-banner.win b { color: var(--gold); }
+@keyframes ar-banner { 0% { opacity: 0; transform: translateX(-9%) skewX(-8deg) scale(1.2); } 14% { opacity: 1; transform: none; } 82% { opacity: 1; } 100% { opacity: 0; transform: translateX(5%); } }
+.ar-flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.ar-skip { position: absolute; left: 0; right: 0; bottom: calc(14px + env(safe-area-inset-bottom)); text-align: center; font-size: 12.5px; color: rgba(255, 255, 255, .5); }
+@media (max-width: 520px) {
+  .ar-stage { bottom: 31%; gap: 8vw; }
+  .ar-floor { height: 40%; }
+  .ar-far { bottom: 30%; }
+  .ar-banner { top: 21%; }
+  #arena { --hw: 33vw; --bw: 44vw; }
+}

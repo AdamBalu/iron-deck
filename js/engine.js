@@ -34,7 +34,7 @@ export function newState(setup, now) {
   const settings = {
     bench: setup.bench, curl: setup.curl, step: setup.step, min: setup.step, max: setup.max ?? 40,
     incline: !!setup.incline, quickChange: !!setup.quickChange,
-    sound: true, buzz: true, theme: 'indigo',
+    sound: true, buzz: true, theme: 'indigo', arena: !!setup.arena,
   };
   const exercises = EXERCISES.filter(e => e.base && (settings.incline || !e.incline)).map(e => e.id);
   if (!settings.incline) exercises.push('seated-curl', 'squeeze-press');
@@ -299,9 +299,47 @@ function strike(state, trail, card, reps, record, skip = []) {
   // The right kind of weapon for this boss lifts the whole blow.
   if (bane) dmg *= 1 + BANE_BONUS;
 
+  // In the arena the blow is also shaped by the fight so far. A forecast of a whole hand leaves that out.
+  const arena = skip.includes('roll') ? null : arenaBlow(state);
+  if (arena) dmg *= arena.mult;
+
   // Each set also knocks out one of the boss's gremlins, which drops iron for the forge.
   const iron = 1 + (crit ? 2 : 0) + (card.boss ? 2 : 0);
-  return { dmg: Math.round(dmg), crit, weak, bane, combos, iron, entry: { suit, run, rec: record, weak } };
+  return { dmg: Math.round(dmg), crit, weak, bane, combos, iron, arena, entry: { suit, run, rec: record, weak } };
+}
+
+// ---------- the arena ----------
+// A fight with its own rules, in play only while the arena is switched on (settings.arena).
+//   Fury builds with every set. When it is full, the next set is your weapon's ultimate.
+//   After each blow the boss strikes back. Block it and your next hit is a riposte; take it and you are staggered.
+//   Below half health a boss is enraged: harder to block, but it leaves itself open.
+// There is no way to lose: a fight only ends sooner or later.
+export const ARENA = { ult: 2.5, riposte: 1.15, stagger: 0.85, open: 1.1, furyLoss: 15 };
+const ARMOUR_SLOTS = ['helm', 'chest', 'arms', 'cloak', 'hands', 'belt', 'boots'];
+export const arenaOn = (state) => !!state.settings?.arena;
+export const enraged = (foe) => foe.hp <= foe.max / 2;
+
+// The chance to block the boss's counterattack. More and better armour blocks more;
+// later bosses and enraged ones are harder to stop.
+export function guard(state) {
+  const armour = ARMOUR_SLOTS.reduce((n, slot) => n + (equipped(state, slot) ? equipped(state, slot).rarity + 1 : 0), 0);
+  const chance = 0.2 + 0.015 * armour - 0.006 * Math.min(25, state.foe.k) - (enraged(state.foe) ? 0.12 : 0);
+  return Math.max(0.08, Math.min(0.85, chance));
+}
+
+// How much fury one set earns.
+export function furyGain(state, { crit, combos, onTarget }) {
+  const weapon = equipped(state, 'weapon');
+  return 18 + (onTarget ? 12 : 0) + (crit ? 25 : 0) + 8 * combos + 2 * (weapon ? weapon.rarity + 1 : 0);
+}
+
+// What the fight so far does to the blow about to land.
+function arenaBlow(state) {
+  if (!arenaOn(state)) return null;
+  const b = state.battle ?? { fury: 0, edge: 0 };
+  const ult = b.fury >= 100, open = enraged(state.foe);
+  const mult = (ult ? ARENA.ult : 1) * (b.edge > 0 ? ARENA.riposte : b.edge < 0 ? ARENA.stagger : 1) * (open ? ARENA.open : 1);
+  return { ult, edge: b.edge, open, mult };
 }
 
 // What the set about to be played would hit for, plain and as a record.
@@ -682,6 +720,7 @@ export function logSet(state, hand, reps, now, rng = null) {
     items: { ...state.items }, equip: { ...state.equip }, iron: state.iron,
     dmg: hand.dmg ?? 0, handIron: hand.iron ?? 0, downs: hand.downs?.length ?? 0,
     drops: hand.drops?.length ?? 0, trail: hand.trail?.length ?? 0,
+    battle: state.battle ? { ...state.battle } : null,
   };
   const lift = state.lifts[card.key] ??= { w: card.w, top: null, sessions: 0, bests: [], first: null, lastAt: 0 };
   const record = isRecord(lift, card.w, reps);
@@ -693,6 +732,14 @@ export function logSet(state, hand, reps, now, rng = null) {
   hand.dmg = (hand.dmg ?? 0) + hit.dmg;
   state.iron += hit.iron;
   hand.iron = (hand.iron ?? 0) + hit.iron;
+  // The arena: spend or build fury now. The boss's answer comes below, if it is still standing.
+  let fight = null;
+  if (hit.arena) {
+    const b = state.battle ??= { fury: 0, edge: 0 };
+    fight = { ult: hit.arena.ult, edge: b.edge, open: hit.arena.open, furyWas: b.fury, blocked: null, guard: null, enragedNow: false };
+    b.fury = hit.arena.ult ? 0 : Math.min(100, b.fury + furyGain(state, { crit: hit.crit, combos: hit.combos.length, onTarget: reps >= (card.reps ?? 1) }));
+    b.edge = 0;
+  }
   let foeDown = null;
   if (state.foe.hp <= 0) {
     const info = foeInfo(state.foe.k);
@@ -703,6 +750,18 @@ export function logSet(state, hand, reps, now, rng = null) {
     (hand.downs ??= []).push({ k: state.foe.k, legend: foeDown.legend, mythic: foeDown.mythic });
     state.foe = spawnFoe(state.foe.k + 1, state);
   }
+  if (fight && !foeDown) {
+    const b = state.battle;
+    fight.enragedNow = !fight.open && enraged(state.foe);
+    // An ultimate leaves the boss too stunned to answer. Full fury is never knocked out of your hands.
+    if (!fight.ult) {
+      fight.guard = guard(state);
+      fight.blocked = (rng ?? Math.random)() < fight.guard;
+      b.edge = fight.blocked ? 1 : -1;
+      if (!fight.blocked && b.fury < 100) b.fury = Math.max(0, b.fury - ARENA.furyLoss);
+    }
+  }
+  if (fight) fight.fury = state.battle.fury;
   let drop = null;
   if (rng && hit.dmg > 0 && rng() < (hit.crit ? 0.035 : 0.012)) {
     const id = rollItem(state, rng);
@@ -713,7 +772,7 @@ export function logSet(state, hand, reps, now, rng = null) {
   if (hand.i >= hand.steps.length) hand.done = true;
   return {
     record, first: lift.sessions === 0, done: hand.done,
-    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, bane: hit.bane, combos: hit.combos, iron: hit.iron, foeDown, drop,
+    dmg: hit.dmg, crit: hit.crit, weak: hit.weak, bane: hit.bane, combos: hit.combos, iron: hit.iron, foeDown, drop, fight,
   };
 }
 
@@ -732,6 +791,7 @@ export function undoSet(state, hand) {
     if (hand.downs) hand.downs.length = u.downs;
     if (hand.drops) hand.drops.length = u.drops ?? 0;
     if (hand.trail) hand.trail.length = u.trail;
+    if (u.battle) state.battle = u.battle; else if ('battle' in u) delete state.battle;
   }
   hand.i--;
   hand.done = false;

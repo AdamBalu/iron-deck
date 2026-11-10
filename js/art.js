@@ -372,12 +372,37 @@ const quad = (a, b, wa, wb, fill) => {
 };
 
 // equip: { slot: itemId }. Layers run back to front: cloak, legs, body, armour, weapon, arms, hands.
-export function heroSvg(equip = {}, { size = 260 } = {}) {
+// The frames of an attack, as stances: wind-up, strike and, for one-handed weapons, follow-through.
+// The enemy stands on the side of the hero's weapon hand (our left as drawn), so the arena shows him mirrored.
+export function attackPoses(line) {
+  const slide = STANCE[line]?.slide ?? 0;
+  if (line === 'hammer' || line === 'zweihander') {
+    return [
+      { l: [98, 44.4], r: [108.5, 26.2], grip: [104, 34], tilt: 30, across: true },
+      { l: [57.3, 124.2], r: [77.6, 119.1], grip: [66, 122], tilt: -104 },
+    ];
+  }
+  if (line === 'halberd') {
+    return [
+      { l: [60, 112], r: [112, 110], grip: [60, 112], tilt: -92, slide: 40 },
+      { l: [10, 108], r: [72, 104], grip: [10, 108], tilt: -92, slide: 40 },
+    ];
+  }
+  if (!STANCE[line]) return [{ l: [74, 104], r: REST_R }, { l: [5, 96], r: REST_R }];
+  return [
+    { l: [58, 38], r: REST_R, grip: [58, 38], tilt: 35, slide },
+    { l: [8, 98], r: REST_R, grip: [8, 98], tilt: -98, slide },
+    { l: [26, 138], r: REST_R, grip: [26, 138], tilt: -150, slide },
+  ];
+}
+
+// pose: a stance to take instead of the weapon's usual one.
+export function heroSvg(equip = {}, { size = 260, pose = null } = {}) {
   const it = (slot) => (equip[slot] ? ITEMS[equip[slot]] : null);
   const gear = (item, art) => `<g class="gear r${item.rarity}">${art}</g>`;
   const piece = (slot) => { const item = it(slot); return item ? gear(item, ARMOR[slot](item.rarity, PAL[item.rarity])) : ''; };
   const weapon = it('weapon');
-  const stance = STANCE[weapon?.line ?? 'none'] ?? STANCE.none;
+  const stance = pose ?? STANCE[weapon?.line ?? 'none'] ?? STANCE.none;
   const bracer = it('arms'), glove = it('hands');
   // One whole arm: short sleeve, bare upper arm, forearm with a wrist wrap or a bracer,
   // then the fist and gauntlet in a separate layer on top.
@@ -394,7 +419,7 @@ export function heroSvg(equip = {}, { size = 260 } = {}) {
     };
   };
   const left = arm('l'), right = arm('r');
-  const held = weapon ? `<g class="gear weapon r${weapon.rarity}" transform="translate(${stance.grip[0]} ${stance.grip[1]}) rotate(${stance.tilt})${stance.slide ? ` translate(0 ${stance.slide})` : ''}">${weaponArt(weapon.line, weapon.rarity)}</g>` : '';
+  const held = weapon ? `<g class="gear weapon r${weapon.rarity}" transform="translate(${stance.grip[0]} ${stance.grip[1]}) rotate(${stance.tilt ?? 0})${stance.slide ? ` translate(0 ${stance.slide})` : ''}">${weaponArt(weapon.line, weapon.rarity)}</g>` : '';
   const body =
     P('M77 152H99L97.5 236H80Z', TROUSERS) + P('M101 152H123L120 236H102.5Z', TROUSERS) +
     P('M77 152H88L88.6 236H80Z', '#fff', ' opacity=".1"') + P('M112 152H123L120 236H111.6Z', '#000', ' opacity=".16"') +

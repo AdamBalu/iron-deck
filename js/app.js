@@ -1,8 +1,9 @@
 // Screens and interaction. All workout rules live in engine.js.
 import {
   SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES, COMBOS,
-  ITEMS, RARITY, RARITY_COLOR, FORGE_COST, WEAPONS, ARMOR, SLOT_NAME, perkText,
+  ITEMS, RARITY, RARITY_COLOR, FORGE_COST, WEAPONS, ARMOR, SLOT_NAME, ULTIMATES, perkText,
 } from './data.js';
+import { playArena, closeArena } from './arena.js';
 import { itemIcon, heroSvg, gremlinSvg, bossSvg } from './art.js';
 import { picto } from './picto.js';
 import { play, prime } from './sound.js';
@@ -31,6 +32,8 @@ function save(quiet = false) {
 }
 
 let S = load();
+// The arena is on unless it was switched off: saves from before it existed get it too.
+if (S) S.settings.arena ??= true;
 
 // ---------- one save across devices ----------
 // The rules are in sync.js and the network in cloud.js. This part runs them and puts the result on screen.
@@ -66,6 +69,7 @@ async function pullSave(uid, cloud) {
     const data = JSON.parse(await sync.cloud.readSave(uid));
     if (data?.v !== 1 || !data.settings || !data.lifts) throw new Error('bad-save');
     next = E.migrate(data);
+    next.settings.arena ??= true;
     next.stamp = cloud.stamp;
   }
   try {
@@ -262,10 +266,28 @@ function strike(res, was, mode, prize = '') {
     if (mode !== 'hit' && !calm) { document.body.classList.add('quake'); setTimeout(() => document.body.classList.remove('quake'), 650); }
   }, calm ? 0 : STRIKE_AT * 1000);
 }
+// Arena mode: the same blow, staged as a full exchange. Returns false when the arena is off or motion is reduced.
+function duel(res, was, mode, prize = '') {
+  if (!res.fight || !res.dmg || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  const info = E.foeInfo(was.k), weapon = E.equipped(S, 'weapon');
+  const pct = (hp) => Math.max(0, Math.round(hp / was.max * 100));
+  const hold = playArena({
+    equip: S.equip, weapon, kind: blow(), color: weapon ? RARITY_COLOR[weapon.rarity] : '#FFD23F',
+    boss: { k: was.k, name: info.name, big: info.big }, hp: { from: pct(was.hp), to: pct(was.hp - res.dmg) },
+    dmg: res.dmg, crit: !!res.record, down: mode === 'down', prize, fight: res.fight,
+    notes: [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : []), ...(res.bane ? ['Feared weapon'] : [])],
+    ultName: ULTIMATES[weapon?.line ?? 'none'], sfx, buzz,
+    // closing early (a tap) lets waiting loot open at once
+    onClose: () => { ui.fxUntil = now(); },
+  });
+  ui.fxUntil = now() + hold;
+  return hold;
+}
 // Loot waits for the fight to finish before it opens.
 function revealDrops() {
   if (!ui.dropQueue.length) return;
-  setTimeout(() => reveal(ui.dropQueue.splice(0), render), Math.max(0, (ui.fxUntil ?? 0) - now()));
+  const open = () => (now() < (ui.fxUntil ?? 0) ? setTimeout(open, 120) : reveal(ui.dropQueue.splice(0), render));
+  open();
 }
 
 function toast(text) {
@@ -322,6 +344,17 @@ function foeStrip({ compact = false, exposed = false } = {}) {
       compact ? '' : `<small class="fear ${keen ? 'on' : ''}">Fears ${WEAPONS[info.bane].many}${keen ? '. Yours hits a quarter harder' : ''}</small>`}</span>
     <span class="foe-hp num">${num(Math.max(0, S.foe.hp))}</span>
   </button>`;
+}
+
+// Arena mode: where the fight stands, in one line under the boss.
+function fightBar() {
+  if (!E.arenaOn(S)) return '';
+  const b = S.battle ?? { fury: 0, edge: 0 }, full = b.fury >= 100;
+  const ult = ULTIMATES[E.equipped(S, 'weapon')?.line ?? 'none'];
+  const edge = full ? `<em class="ready">${ult} ready</em>` : b.edge > 0 ? '<em class="good">Riposte +15%</em>' : b.edge < 0 ? '<em class="bad">Staggered −15%</em>' : '';
+  return `<button class="fightbar ${full ? 'full' : ''}" data-act="fight-info" aria-label="How the fight works">
+    <b>Fury</b><span class="hp"><i style="width:${b.fury}%"></i></span>
+    <small>Block ${Math.round(E.guard(S) * 100)}%</small>${edge}</button>`;
 }
 
 function ensurePending() {
@@ -519,7 +552,7 @@ function playScreen() {
       <div class="dots">${dots}</div>
       <button class="icon" data-act="menu" aria-label="More options">${ICON.more}</button>
     </header>
-    ${foeStrip({ compact: true, exposed: !!nh?.weak })}
+    ${foeStrip({ compact: true, exposed: !!nh?.weak })}${fightBar()}
     <article class="face ${c.boss ? 'bossface' : ''}">
       <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Finisher' : `${suitName(ex.suit)} card`}</span>
         <button class="how" data-act="toggle-cue">${ui.cue ? 'Hide tips' : 'How to do it'}</button></div>
@@ -546,7 +579,7 @@ function restScreen() {
       <div class="dots">${hand().steps.map((_, i) => `<span class="${i < st.index ? 'done' : i === st.index ? 'now' : ''}"></span>`).join('')}</div>
       <button class="icon" data-act="menu" aria-label="More options">${ICON.more}</button>
     </header>
-    ${foeStrip({ compact: true })}
+    ${foeStrip({ compact: true })}${fightBar()}
     <div class="resting">
       <div class="ring">
         <svg viewBox="0 0 200 200" aria-hidden="true">
@@ -763,6 +796,7 @@ function settingsScreen() {
     </section>`}
     <section class="panel">
       <div class="field col"><div><b>Look</b><small>New looks arrive with seasons and reward cards</small></div><div class="swatches">${looks}</div></div>
+      ${choice('arena', 'Arena fights', [[true, 'On'], [false, 'Off']])}
       ${choice('sound', 'Sounds', [[true, 'On'], [false, 'Off']])}
       ${choice('buzz', 'Vibration', [[true, 'On'], [false, 'Off']])}
     </section>
@@ -826,6 +860,21 @@ function sheetView() {
       <button class="pick" data-act="sync-keep" data-which="cloud"><b>The one in your account</b><span>${facts(sync.ask)}</span></button>
       <button class="pick" data-act="sync-keep" data-which="local"><b>The one on this device</b><span>${facts(describe(S, E.levelFor))}</span></button>
       <button class="quiet" data-act="sign-out">Decide later and sign out</button>
+    </div>`;
+  }
+  if (ui.sheet === 'fight') {
+    const b = S.battle ?? { fury: 0, edge: 0 }, weapon = E.equipped(S, 'weapon');
+    return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info" role="dialog" aria-label="How the fight works">
+      <p class="corner"><span>Arena fights</span></p>
+      <h2>How the fight works</h2>
+      <ul class="rules ink">
+        <li><b>Fury: ${b.fury} of 100</b><span>Every set builds it. Hitting your target reps, records, combos and a rarer weapon build it faster. When it is full, your next set is <b>${ULTIMATES[weapon?.line ?? 'none']}</b>, which hits two and a half times as hard.</span></li>
+        <li><b>The boss strikes back</b><span>After each set it swings at you. Your chance to block is <b>${Math.round(E.guard(S) * 100)}%</b> right now, and it comes from your armour: more pieces and rarer ones block more. Later bosses are harder to stop.</span></li>
+        <li><b>Block and you riposte</b><span>Your next hit lands 15% harder. Take the hit and you are staggered: the next one lands 15% softer and you lose a little fury.</span></li>
+        <li><b>Below half health it is enraged</b><span>It gets harder to block, but leaves itself open: every blow lands 10% harder.</span></li>
+        <li><b>You cannot lose</b><span>A fight only ends sooner or later. Skip any scene with a tap, or switch arena fights off in Settings.</span></li>
+      </ul>
+      <button class="quiet" data-act="close-sheet">Close</button>
     </div>`;
   }
   if (ui.sheet?.item) return itemSheet(ui.sheet.item);
@@ -1141,7 +1190,7 @@ const actions = {
   },
   'setup-go'() {
     const s = ui.setup;
-    S = E.newState({ ...s, max: Math.max(s.max, s.bench, s.curl) }, now());
+    S = E.newState({ ...s, max: Math.max(s.max, s.bench, s.curl), arena: true }, now());
     save();
     navigator.storage?.persist?.().catch(() => {});
     go('home');
@@ -1213,13 +1262,14 @@ const actions = {
     if (res.foeDown) {
       // The one moment worth stopping for: the table waits while the boss falls.
       const prize = res.foeDown.mythic ? 'The perfect kill: mythic drop' : res.foeDown.legend ? 'Finished with a record: legendary drop' : res.record ? 'Finished with a record' : 'Boss beaten';
-      strike(res, was, 'down', prize);
+      const hold = duel(res, was, 'down', prize);
+      if (!hold) strike(res, was, 'down', prize);
       $app.classList.add('locked');
-      setTimeout(next, 2000);
+      setTimeout(next, hold ? hold - 200 : 2000);
     } else {
       // Every other blow plays over the rest that follows, so the fight never costs you time.
       if (!res.dmg) { sfx('tick'); buzz(30); }
-      strike(res, was, res.record ? 'crit' : 'hit');
+      if (!duel(res, was, res.record ? 'crit' : 'hit')) strike(res, was, res.record ? 'crit' : 'hit');
       next();
     }
   },
@@ -1256,6 +1306,7 @@ const actions = {
   wear({ theme }) { S.settings.theme = theme; save(); applyTheme(); render(); },
   'card-info'({ id }) { ui.sheet = { card: id }; render(); },
   'foe-info'() { ui.sheet = 'foe'; render(); },
+  'fight-info'() { ui.sheet = 'fight'; render(); },
   'item-info'({ id }) { ui.sheet = { item: id }; render(); },
   'slot-empty'({ slot }) { toast(`No ${SLOT_NAME[slot].toLowerCase()} yet. Play a hand: bosses and reward cards drop gear.`); },
   equip({ id }) { E.equip(S, id); save(); sfx(ITEMS[id].slot === 'weapon' ? 'equip-weapon' : 'equip-armor'); buzz(30); ui.sheet = null; render(); },
@@ -1276,6 +1327,8 @@ const actions = {
     S.pending = null;
     save(); render();
     if (key === 'sound' && val === 'true') sfx('place');
+    // Fury and stagger belong to the arena: leaving it clears them, so nothing lingers unseen.
+    if (key === 'arena' && val !== 'true') delete S.battle, save();
   },
   'set-step'({ key, d }) {
     S.settings[key] = Math.max(S.settings.step, Math.min(80, S.settings[key] + +d));
@@ -1337,7 +1390,7 @@ document.addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (data?.v !== 1 || !data.settings || !data.lifts) throw new Error('not a backup');
-    S = E.migrate(data); save();
+    S = E.migrate(data); S.settings.arena ??= true; save();
     ui.notice = 'Backup restored.';
   } catch {
     ui.notice = 'That file is not an Iron Deck backup. Nothing was changed.';

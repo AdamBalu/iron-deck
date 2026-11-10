@@ -44,6 +44,7 @@ npm test
 - `js/app.js`: the screens.
 - `sw.js`: offline support.
 - `js/picto.js`: the exercise drawings.
+- `js/arena.js`: arena fights, the full-screen exchange staged after a set. The rules it shows live in the engine.
 - `js/sound.js`, `sounds/`: recorded card and combat sounds.
 - `js/sync.js`, `js/cloud.js`, `js/config.js`: one save across devices (rules, network, project settings).
 

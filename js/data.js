@@ -275,6 +275,12 @@ export const WEAPONS = {
     names: ['Pike', 'Halberd', 'Royal Glaive', 'Dragon Lance', "Tomorrow's End", 'Spear of Today'] },
 };
 
+// In the arena, full fury turns a set into the ultimate of whatever you are holding.
+export const ULTIMATES = {
+  sword: 'Thousand Cuts', zweihander: 'Skysplitter', hammer: 'Earthshaker', axe: 'Whirlwind',
+  mace: 'Starfall', halberd: "Dragon's Thrust", none: 'Haymaker',
+};
+
 // Armour: each piece strengthens one suit. The helm pays points instead.
 export const ARMOR = {
   helm:  { name: 'Helm',        suit: null,      values: [4, 8, 12, 18, 25, 35],

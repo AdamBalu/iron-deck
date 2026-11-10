@@ -1,5 +1,5 @@
 // Offline support. Online: always fetch the newest files. Offline or slow: serve the last saved copy.
-const CACHE = 'iron-deck-v11';
+const CACHE = 'iron-deck-v12';
 const SOUNDS = [
   'slide1', 'slide2', 'slide3', 'slide4', 'place1', 'place2', 'fan', 'shuffle', 'pack', 'takeout',
   'slice1', 'slice2', 'chop', 'punch1', 'punch2', 'plate', 'clang1', 'clang2', 'body',
@@ -8,7 +8,7 @@ const SOUNDS = [
 const SHELL = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/engine.js', 'js/data.js', 'js/art.js', 'js/art-bosses.js', 'js/picto.js',
-  'js/sound.js', 'js/sync.js', 'js/cloud.js', 'js/config.js',
+  'js/sound.js', 'js/sync.js', 'js/cloud.js', 'js/config.js', 'js/arena.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   ...SOUNDS.map(name => `sounds/${name}.ogg`),
 ];
