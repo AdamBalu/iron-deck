@@ -1,5 +1,5 @@
 // Offline support. Online: always fetch the newest files. Offline or slow: serve the last saved copy.
-const CACHE = 'iron-deck-v8';
+const CACHE = 'iron-deck-v9';
 const SHELL = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/engine.js', 'js/data.js', 'js/art.js', 'js/art-bosses.js', 'js/picto.js',

@@ -74,6 +74,18 @@ const videoLink = (ex) => `<a class="video" href="${videoUrl(ex)}" target="_blan
 const art = (id, size, animate = false) => `<span class="art" style="--c:${SUITS[EX[id].suit].color}">${picto(id, { size, animate })}</span>`;
 // Shrinks a card title just enough that its longest word fits on one line instead of breaking.
 const fit = (name, room) => Math.min(1, room / Math.max(...name.split(/[\s-]+/).map(w => w.length))).toFixed(2);
+// A card title on at most two lines: broken where the two lines come out most even, and shrunk only
+// as far as the longer line needs. room: how many characters fit across the card at full size.
+function cardTitle(name, room) {
+  const words = name.split(' ');
+  let lines = [name], longest = name.length;
+  for (let i = 1; i < words.length; i++) {
+    const first = words.slice(0, i).join(' '), second = words.slice(i).join(' ');
+    const width = Math.max(first.length, second.length);
+    if (width < longest) { longest = width; lines = [first, second]; }
+  }
+  return `<b style="--fit:${Math.max(0.66, Math.min(1, room / longest)).toFixed(2)}">${lines.join('<br>')}</b>`;
+}
 
 function bountyText(b) {
   if (b.type === 'records') return b.n === 1 ? 'set a new record' : `set ${b.n} new records`;
@@ -465,7 +477,7 @@ function lootCard(item, i) {
     const ex = EX[item.id];
     return `<button class="loot cardloot ${ui.opened.has(i) ? 'flipped still' : ''}" data-act="flip" data-i="${i}" aria-label="Flip your reward card">
       <span class="lootback"><i><span>?</span></i><em>Tap to flip</em></span>
-      <span class="lootface"><small>${suitIcon(ex.suit, 12)} New ${suitName(ex.suit).toLowerCase()} card</small>${art(ex.id, 120)}<b style="--fit:${fit(ex.name, 11)}">${ex.name}</b><span>In your next hand</span></span>
+      <span class="lootface"><small>${suitIcon(ex.suit, 12)} New ${suitName(ex.suit).toLowerCase()} card</small>${art(ex.id, 120)}${cardTitle(ex.name, 11)}<span>In your next hand</span></span>
     </button>`;
   } else if (item.type === 'mod') {
     tag = 'New twist'; big = MODS[item.id].name; sub = MODS[item.id].how;
@@ -592,7 +604,7 @@ function deckScreen() {
     return `<section class="decksuit">
       <h3>${suitIcon(s)} ${suitName(s)} <small>${have} of ${cards.length}</small></h3>
       <div class="grid">${cards.map(e => owned.has(e.id)
-        ? `<button class="dcard ${S.fresh.includes(e.id) ? 'fresh' : ''}" data-act="card-info" data-id="${e.id}" style="--c:${SUITS[s].color}"><span class="dc-top">${suitIcon(s, 13)}${S.fresh.includes(e.id) ? '<em>New</em>' : ''}</span>${art(e.id, 96)}<b style="--fit:${fit(e.name, 11)}">${e.name}</b></button>`
+        ? `<button class="dcard ${S.fresh.includes(e.id) ? 'fresh' : ''}" data-act="card-info" data-id="${e.id}" style="--c:${SUITS[s].color}"><span class="dc-top">${suitIcon(s, 13)}${S.fresh.includes(e.id) ? '<em>New</em>' : ''}</span>${art(e.id, 96)}${cardTitle(e.name, 10)}</button>`
         : `<div class="dcard locked" style="--c:${SUITS[s].color}"><i></i></div>`).join('')}</div>
     </section>`;
   }).join('');
