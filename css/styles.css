@@ -343,6 +343,11 @@ button.target .num:first-child { text-decoration: underline dotted 2px; text-und
 .change b { font-family: var(--display); font-weight: 900; font-size: 24px; color: #C6321F; white-space: nowrap; }
 .nextup { width: 100%; margin-top: 24px; text-align: left; }
 .nextup small { color: var(--muted); display: block; margin-bottom: 7px; font-size: 13.5px; }
+/* the next card and how to do it, readable at a glance while you catch your breath */
+.nextcard { background: var(--card); color: var(--ink); border-radius: 16px; box-shadow: var(--card-shadow-sm); }
+.nextcard .mini { background: none; box-shadow: none; }
+.nexttip { margin: 0; padding: 11px 14px 13px; border-top: 1px solid var(--hair-ink); font-size: 14.5px; line-height: 1.4; }
+.nexttip b { font-weight: 700; }
 
 /* ----- finishing ----- */
 .cleared { font-family: var(--display); font-size: 72px; line-height: .84; margin-top: 14px; letter-spacing: .005em; }
@@ -414,11 +419,11 @@ button.target .num:first-child { text-decoration: underline dotted 2px; text-und
 .decksuit h3 { font-family: var(--body); font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .decksuit h3 small { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 13.5px; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-top: 11px; }
-.dcard { aspect-ratio: 5 / 6.4; border-radius: 13px; background: var(--card); color: var(--ink); padding: 11px 10px 10px; text-align: left; display: flex; flex-direction: column; gap: 8px; position: relative; box-shadow: var(--card-shadow-sm); transition: transform .12s var(--ease); }
+.dcard { aspect-ratio: 5 / 7; border-radius: 13px; background: var(--card); color: var(--ink); padding: 9px 9px 8px; text-align: left; display: flex; flex-direction: column; gap: 5px; position: relative; box-shadow: var(--card-shadow-sm); transition: transform .12s var(--ease); }
 button.dcard:active { transform: scale(.95) rotate(-1deg); }
 .dcard::before { content: ""; position: absolute; inset: 4px; border: 1px solid var(--hair-ink); border-radius: 9px; pointer-events: none; }
-.dcard b { font-family: var(--display); font-weight: 900; font-size: 18.5px; line-height: .98; overflow-wrap: anywhere; }
-.dcard em { margin-top: auto; align-self: flex-start; font-style: normal; font-size: 11.5px; font-weight: 700; background: var(--ink); color: var(--gold); border-radius: 6px; padding: 2px 7px 1px; }
+.dcard b { font-family: var(--display); font-weight: 900; font-size: calc(17px * var(--fit, 1)); line-height: 1; text-align: center; text-wrap: balance; min-height: 2em; display: grid; place-items: center; }
+.dcard em { font-style: normal; font-size: 11.5px; font-weight: 700; background: var(--ink); color: var(--gold); border-radius: 6px; padding: 2px 7px 1px; }
 .dcard.locked { background: color-mix(in srgb, var(--deep), white 4%); padding: 5px; box-shadow: inset 0 0 0 1px var(--hair); opacity: .8; }
 .dcard.locked::before { display: none; }
 .dcard.locked i { --c: var(--pit); --line: rgba(255, 255, 255, .07); flex: 1; height: auto; border-radius: 9px; }
@@ -639,8 +644,19 @@ body.quake #app, body.quake #reveal { animation: quake .6s linear; }
   .mini b { font-size: 17.5px; }
   .mini .tgt { font-size: 25px; }
   .fight, .bounty { font-size: 16px; max-width: 70ch; }
-  #app.s-deal .dock { position: static; max-width: 440px; margin: 34px auto 0; }
-  #app.s-deal .dock::before { display: none; }
+  /* the pinned bottom bar is a phone device: here the buttons just sit under the content */
+  .dock { position: static; max-width: 440px; margin: 34px auto 0; padding-top: 0; }
+  .dock::before { display: none; }
+
+  /* resting: the clock on the left, what is coming next on the right */
+  #app.s-rest { max-width: 1000px; }
+  .resting { display: grid; grid-template-columns: 380px minmax(0, 1fr); column-gap: 56px; align-content: center; align-items: center; text-align: left; padding: 36px 0 8px; }
+  .resting .ring { grid-column: 1; grid-row: 1 / span 2; text-align: center; }
+  .resting .change, .resting .nextup { grid-column: 2; margin-top: 0; }
+  .resting .change { align-self: end; margin-bottom: 18px; font-size: 19px; }
+  .resting .change + .nextup { align-self: start; }
+  .nextup small { font-size: 15px; }
+  .nexttip { font-size: 17px; padding: 14px 18px 16px; }
 
   /* a set: the card gets bigger type, not more things */
   .face { padding: 34px 36px 32px; border-radius: 32px; flex: none; min-height: 620px; }
@@ -734,4 +750,77 @@ body.quake #app, body.quake #reveal { animation: quake .6s linear; }
   .shout.long { font-size: 56px; }
   .downed { width: 240px; height: 240px; }
   .downed .boss-art { width: 210px; height: 210px; }
+}
+
+/* short phones: a smaller clock leaves room for the next card's tips */
+@media (max-height: 740px) and (max-width: 1099px) {
+  .ring { width: min(56vw, 220px); }
+  .resting .num { font-size: 100px; }
+  .resting { padding: 10px 0; }
+  .nextup, .change { margin-top: 16px; }
+}
+
+/* ----- exercise cards: a picture window showing the movement ----- */
+.art { display: grid; place-items: center; overflow: hidden; border-radius: 10px; color: var(--ink);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 10%, #fff), color-mix(in srgb, var(--c) 26%, var(--paper)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
+.art .picto { display: block; max-width: 100%; max-height: 100%; }
+.dc-top { display: flex; align-items: center; justify-content: space-between; height: 15px; position: relative; }
+.dcard .art { flex: 1; min-height: 0; }
+.dcard .art .picto { width: 100%; height: 100%; }
+.dcard.locked { aspect-ratio: 5 / 7; }
+.mini .art { flex: none; width: 54px; height: 41px; border-radius: 9px; }
+.mini .art .picto { width: 50px; height: auto; }
+.block.boss .mini .art { color: var(--paper); background: rgba(255, 255, 255, .09); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+.face .art { height: 104px; margin-top: 12px; border-radius: 14px; }
+.face .art .picto { height: 100%; width: auto; }
+.bossface .art { color: var(--paper); background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent); }
+.face h2 { margin-top: 12px; }
+.nextbody { display: flex; align-items: center; gap: 12px; padding: 11px 12px 12px; border-top: 1px solid var(--hair-ink); }
+.nextbody .art { flex: none; width: 112px; height: 84px; }
+.nextbody .nexttip { border-top: 0; padding: 0; }
+.mini.plain { background: none; box-shadow: none; }
+.cardloot .lootface { padding: 10px 10px 12px; gap: 6px; }
+.cardloot .lootface small { display: flex; align-items: center; justify-content: center; gap: 5px; }
+.cardloot .art { flex: 1; min-height: 0; }
+.cardloot .art .picto { height: 100%; width: auto; }
+.cardloot .lootface b { margin: 0; font-size: calc(24px * var(--fit, 1)); text-wrap: balance; }
+.cardloot .lootface > span:last-child { margin: 0; }
+.cardsheet .art { height: 180px; border-radius: 16px; }
+.cardsheet .art .picto { height: 100%; width: auto; }
+@media (max-height: 740px) and (max-width: 1099px) { .face .art { height: 82px; } }
+@media (min-width: 1100px) {
+  .face .art { height: 190px; border-radius: 20px; }
+  .dcard b { font-size: calc(21px * var(--fit, 1)); }
+  .dcard { padding: 12px 12px 11px; gap: 8px; }
+  .mini .art { width: 68px; height: 51px; }
+  .mini .art .picto { width: 64px; }
+  .nextbody { padding: 16px 18px 18px; gap: 18px; }
+  .nextbody .art { width: 190px; height: 142px; }
+  .nextbody .nexttip { padding: 0; }
+  .cardsheet .art { height: 250px; }
+  .cardloot .lootface b { font-size: calc(30px * var(--fit, 1)); }
+}
+
+/* wide screens: the playing card opens out, picture on the left and the set on the right */
+@media (min-width: 1100px) {
+  .dock { width: 100%; }
+  #app.s-play { max-width: 1020px; }
+  .face { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 44px; grid-auto-rows: min-content; align-content: start; min-height: 0; padding-bottom: 36px; }
+  .face > .corner { grid-column: 1 / -1; }
+  .face > .art { grid-column: 1; grid-row: 2 / span 12; height: auto; min-height: 420px; margin-top: 16px; align-self: stretch; }
+  .face > .art .picto { width: 100%; height: auto; }
+  .face > :not(.corner):not(.art) { grid-column: 2; }
+  .face h2 { margin-top: 16px; }
+  .face .entry { margin-top: 30px; padding-top: 0; }
+}
+@media (min-width: 1100px) {
+  /* sized so the whole card, Done button included, fits an 800px-tall window */
+  .face { padding: 28px 34px 30px; }
+  .face h2 { font-size: 48px; }
+  .target .num { font-size: 100px; }
+  .reps button { width: 66px; height: 66px; }
+  .reps output b { font-size: 56px; }
+  .face > .art { min-height: 360px; }
+  .nextbody .art .picto, .cardsheet .art .picto { width: 100%; height: 100%; }
 }

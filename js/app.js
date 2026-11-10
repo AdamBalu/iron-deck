@@ -4,6 +4,7 @@ import {
   ITEMS, RARITY, RARITY_COLOR, FORGE_COST, WEAPONS, ARMOR, SLOT_NAME, perkText,
 } from './data.js';
 import { itemIcon, heroSvg, gremlinSvg, bossSvg } from './art.js';
+import { picto } from './picto.js';
 import * as E from './engine.js';
 
 const KEY = 'irondeck.v1';
@@ -68,6 +69,11 @@ function targetText(card) {
 const videoUrl = (ex) => 'https://www.youtube.com/results?search_query=' +
   encodeURIComponent(ex.q ?? `how to ${ex.name}${isDb(ex) && !/dumbbell/i.test(ex.name) ? ' dumbbell' : ''}`);
 const videoLink = (ex) => `<a class="video" href="${videoUrl(ex)}" target="_blank" rel="noopener">Watch a video</a>`;
+
+// The picture window of an exercise card: the movement, on a wash of the suit's colour.
+const art = (id, size, animate = false) => `<span class="art" style="--c:${SUITS[EX[id].suit].color}">${picto(id, { size, animate })}</span>`;
+// Shrinks a card title just enough that its longest word fits on one line instead of breaking.
+const fit = (name, room) => Math.min(1, room / Math.max(...name.split(/[\s-]+/).map(w => w.length))).toFixed(2);
 
 function bountyText(b) {
   if (b.type === 'records') return b.n === 1 ? 'set a new record' : `set ${b.n} new records`;
@@ -286,7 +292,7 @@ function dealScreen() {
     const rows = b.cards.map((c) => {
       const ex = EX[c.ex];
       return `<li class="mini" style="--i:${i++}">
-        ${suitIcon(ex.suit, 20)}
+        ${art(c.ex, 48)}
         <div><b>${ex.name}</b>${c.mod && MODS[c.mod] ? `<em>${MODS[c.mod].name}</em>` : ''}${state(c)}</div>
         <span class="tgt">${targetText(c)}</span>
       </li>`;
@@ -345,7 +351,7 @@ function initStepUi() {
   const c = st.card, ex = EX[c.ex];
   ui.reps = c.boss ? (c.lastTop ? c.lastTop + 1 : ex.kind === 'time' ? 30 : isDb(ex) ? 15 : 12) : c.reps;
   ui.adjust = false; ui.hold = null;
-  ui.cue = !S.lifts[c.key] || S.lifts[c.key].sessions === 0 ? c.sets.length === 0 : false;
+  ui.cue = false;
 }
 
 function playScreen() {
@@ -403,9 +409,9 @@ function playScreen() {
     </header>
     ${foeStrip({ compact: true, exposed: !!nh?.weak })}
     <article class="face ${c.boss ? 'bossface' : ''}">
-      <div class="pip">${suitIcon(ex.suit, 190)}</div>
       <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Finisher' : `${suitName(ex.suit)} card`}</span>
         <button class="how" data-act="toggle-cue">${ui.cue ? 'Hide tips' : 'How to do it'}</button></div>
+      ${art(c.ex, 160, true)}
       <h2>${ex.name}</h2>
       <p class="setno">${setLine}</p>
       ${ui.cue ? `<p class="cue">${ex.cue} ${videoLink(ex)}</p>` : ''}
@@ -440,8 +446,11 @@ function restScreen() {
       </div>
       ${change}
       <div class="nextup">
-        <small>Next up</small>
-        <div class="mini">${suitIcon(ex.suit, 18)}<div><b>${ex.name}</b></div><span class="tgt">${targetText(c)}</span></div>
+        <small>Next up${c.boss ? ', the finisher' : `, set ${st.setNo} of ${st.setsTotal}`}</small>
+        <div class="nextcard">
+          <div class="mini plain">${suitIcon(ex.suit, 18)}<div><b>${ex.name}</b></div><span class="tgt">${targetText(c)}</span></div>
+          <div class="nextbody">${art(c.ex, 112, true)}<p class="nexttip">${c.mod && MODS[c.mod] ? `<b>${MODS[c.mod].name}.</b> ${MODS[c.mod].how} ` : ''}${ex.cue} ${videoLink(ex)}</p></div>
+        </div>
       </div>
     </div>
     <div class="dock">
@@ -454,7 +463,10 @@ function lootCard(item, i) {
   let tag, big, sub;
   if (item.type === 'exercise') {
     const ex = EX[item.id];
-    tag = 'New card'; big = ex.name; sub = `${suitIcon(ex.suit, 14)} joins your ${suitName(ex.suit).toLowerCase()} suit and shows up next hand`;
+    return `<button class="loot cardloot ${ui.opened.has(i) ? 'flipped still' : ''}" data-act="flip" data-i="${i}" aria-label="Flip your reward card">
+      <span class="lootback"><i><span>?</span></i><em>Tap to flip</em></span>
+      <span class="lootface"><small>${suitIcon(ex.suit, 12)} New ${suitName(ex.suit).toLowerCase()} card</small>${art(ex.id, 120)}<b style="--fit:${fit(ex.name, 11)}">${ex.name}</b><span>In your next hand</span></span>
+    </button>`;
   } else if (item.type === 'mod') {
     tag = 'New twist'; big = MODS[item.id].name; sub = MODS[item.id].how;
   } else if (item.type === 'theme') {
@@ -580,7 +592,7 @@ function deckScreen() {
     return `<section class="decksuit">
       <h3>${suitIcon(s)} ${suitName(s)} <small>${have} of ${cards.length}</small></h3>
       <div class="grid">${cards.map(e => owned.has(e.id)
-        ? `<button class="dcard ${S.fresh.includes(e.id) ? 'fresh' : ''}" data-act="card-info" data-id="${e.id}" style="--c:${SUITS[s].color}">${suitIcon(s, 15)}<b>${e.name}</b>${S.fresh.includes(e.id) ? '<em>New</em>' : ''}</button>`
+        ? `<button class="dcard ${S.fresh.includes(e.id) ? 'fresh' : ''}" data-act="card-info" data-id="${e.id}" style="--c:${SUITS[s].color}"><span class="dc-top">${suitIcon(s, 13)}${S.fresh.includes(e.id) ? '<em>New</em>' : ''}</span>${art(e.id, 96)}<b style="--fit:${fit(e.name, 11)}">${e.name}</b></button>`
         : `<div class="dcard locked" style="--c:${SUITS[s].color}"><i></i></div>`).join('')}</div>
     </section>`;
   }).join('');
@@ -716,8 +728,9 @@ function sheetView() {
     const best = l?.bests?.length
       ? (isDb(ex) ? l.bests.map(b => `${kg(b.w)} kg × ${b.r}`).join(', ') : `${Math.max(...l.bests.map(b => b.r))} ${ex.kind === 'time' ? 'sec' : 'reps'}`)
       : null;
-    return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info" role="dialog" aria-label="${ex.name}">
+    return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info cardsheet" role="dialog" aria-label="${ex.name}">
       <p class="corner">${suitIcon(ex.suit, 18)}<span>${suitName(ex.suit)} card</span></p>
+      ${art(ex.id, 260, true)}
       <h2>${ex.name}</h2>
       <p>${ex.cue} ${videoLink(ex)}</p>
       ${spark(l)}
