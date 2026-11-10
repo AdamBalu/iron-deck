@@ -491,9 +491,13 @@ function playScreen() {
   // A record is only possible on a card you have played before.
   const canRecord = (S.lifts[c.key]?.sessions ?? 0) > 0;
   if (nh && (S.foe.hp <= nh.plain || (canRecord && S.foe.hp <= nh.crit))) {
-    const legendLeft = foe.big && Object.values(ITEMS).some(it => it.rarity === 4 && !S.items[it.id]);
+    const lacking = (r) => Object.values(ITEMS).some(it => it.rarity === r && !S.items[it.id]);
+    const legendLeft = foe.big && lacking(4);
+    // The perfect kill: a record, on a season boss, with the weapon it fears.
+    const mythicLeft = foe.big && lacking(5) && E.equipped(S, 'weapon')?.line === foe.bane;
     kill = `<p class="kill"><b>${foe.name}</b> has ${num(S.foe.hp)} health left. ${S.foe.hp <= nh.plain ? 'This set finishes it.' : 'A record on this set finishes it.'}${
-      legendLeft && canRecord ? ' Land the final blow as a record and it drops a legendary.' : ''}</p>`;
+      mythicLeft && canRecord ? ' Land the final blow as a record, with the weapon it fears in your hand, and it drops a <b>mythic</b>.'
+        : legendLeft && canRecord ? ' Land the final blow as a record and it drops a legendary.' : ''}</p>`;
   }
   const mod = c.mod && MODS[c.mod] ? `<p class="twist"><b>${MODS[c.mod].name}.</b> ${MODS[c.mod].how}</p>` : '';
 
@@ -628,7 +632,7 @@ function finishScreen() {
     ${m.foe.downs.map(d => `<section class="seasoncard down">
       <span class="beaten">${bossSvg(d.k, 76)}</span>
       <small>${d.big ? 'Season boss beaten' : 'Boss beaten'}</small><b>${d.name}</b>
-      <p>${d.reward} bonus points and a drop from its pockets.${d.legend ? ' You finished it with a record, so that drop is a <strong>legendary</strong>.' : ''}</p></section>`).join('')}
+      <p>${d.reward} bonus points and a drop from its pockets.${d.mythic ? ' A record, landed with the weapon it feared: that drop is a <strong>mythic</strong>.' : d.legend ? ' You finished it with a record, so that drop is a <strong>legendary</strong>.' : ''}</p></section>`).join('')}
     <div class="foe-report"><small>${m.foe.downs.length ? 'Next in line' : `This hand hit for ${num(m.foe.dmg)}`}</small>${foeStrip()}</div>
     ${season}
     <section class="lvls">${ups}</section>
@@ -838,14 +842,14 @@ function sheetView() {
       <ul class="rules ink">
         <li><b>It fears ${WEAPONS[info.bane].many}</b><span>Fight it with one in hand and every hit lands a quarter harder. ${(() => {
           if (E.equipped(S, 'weapon')?.line === info.bane) return 'You are holding one.';
-          const best = [4, 3, 2, 1, 0].map(r => ITEMS[`${info.bane}-${r}`]).find(it => S.items[it.id]);
+          const best = [5, 4, 3, 2, 1, 0].map(r => ITEMS[`${info.bane}-${r}`]).find(it => S.items[it.id]);
           return best ? `</span><button class="swap" data-act="equip" data-id="${best.id}">Equip your ${best.name}</button><span>` : 'You do not own one yet.';
         })()}</span></li>
         <li><b>Every set you log is a hit</b><span>Higher suit levels and gear hit harder. ${suitName(info.weak)} sets hit this one half again as hard.</span></li>
         <li><b>A record is a critical hit</b><span>Double damage. The finisher at the end of a hand hits double too.</span></li>
         <li><b>Every set fells a gremlin</b><span>They drop iron for the forge, and now and then an item.</span></li>
         <li><b>Combos land by themselves</b><span>Play the pattern and the bonus is added. Your combos are listed in your deck.</span></li>
-        ${info.big ? '<li><b>Legendary at stake</b><span>Land the final blow on a season boss as a record and it drops a legendary.</span></li>' : ''}
+        ${info.big ? '<li><b>Legendary at stake, and more</b><span>Land the final blow on a season boss as a record and it drops a legendary. Do it holding the weapon it fears and the drop is a mythic, which never comes any other way.</span></li>' : ''}
       </ul>
       <button class="quiet" data-act="close-sheet">Close</button>
     </div>`;
@@ -885,11 +889,11 @@ function heroScreen() {
     return `<button class="rung r${it.rarity} ${have ? 'have' : 'lack'} ${S.equip[it.slot] === id ? 'worn' : ''} ${forgeable ? 'forgeable' : ''}" data-act="item-info" data-id="${id}"
       style="--rc:${RARITY_COLOR[it.rarity]}" aria-label="${it.name}${have ? '' : ', not found yet'}">${itemIcon(id, 44)}</button>`;
   };
-  const line = (key, label) => `<div class="line"><span>${label}</span><div class="rungs">${[0, 1, 2, 3, 4].map(r => rung(`${key}-${r}`)).join('')}</div></div>`;
+  const line = (key, label) => `<div class="line"><span>${label}</span><div class="rungs">${RARITY.map((_, r) => rung(`${key}-${r}`)).join('')}</div></div>`;
   // What iron can make next: the step above the best item you own in each line, cheapest first.
   const forgeNext = [...Object.keys(WEAPONS), ...Object.keys(ARMOR)].map((k) => {
-    const top = [4, 3, 2, 1, 0].find(r => S.items[`${k}-${r}`]);
-    return top == null || top === 4 ? null : ITEMS[`${k}-${top + 1}`];
+    const top = [5, 4, 3, 2, 1, 0].find(r => S.items[`${k}-${r}`]);
+    return top == null || top === 5 ? null : ITEMS[`${k}-${top + 1}`];
   }).filter(Boolean).sort((a, b) => FORGE_COST[a.rarity] - FORGE_COST[b.rarity]);
   const forgeRow = (it) => {
     const cost = FORGE_COST[it.rarity], ready = S.iron >= cost;
@@ -920,7 +924,7 @@ function heroScreen() {
     ${forge}
     <section class="panel dark armory">
       <h3>Armoury <small>${owned} of ${total}</small></h3>
-      <p class="empty">Tap any item to see it. Gear drops from reward cards, bosses and gremlins, and the forge above makes the next step up of anything you own.</p>
+      <p class="empty">Tap any item to see it. Gear drops from reward cards, bosses and gremlins, and the forge above makes the next step up of anything you own. The last column, mythic, never drops by luck.</p>
       <div class="rarities">${RARITY.map((n, i) => `<span style="--rc:${RARITY_COLOR[i]}">${n}</span>`).join('')}</div>
       ${Object.entries(WEAPONS).map(([k, w]) => line(k, w.name)).join('')}
       <hr>
@@ -940,12 +944,14 @@ function itemSheet(id) {
       ? `<button class="btn dark" data-act="forge" data-id="${id}">Forge for ${cost} iron</button><p class="muted">Made from your ${below.name}, which you keep. You have ${num(S.iron)} iron.</p>`
       : `<p class="muted">Forge it from your ${below.name} for ${cost} iron. You have ${num(S.iron)}: ${num(cost - S.iron)} to go, at a few iron per set.</p>`;
   } else {
-    action = `<p class="muted">${it.rarity === 4
+    action = `<p class="muted">${it.rarity === 5
+      ? 'Not found yet. A mythic never drops by luck. Finish a season boss with a record while holding the weapon it fears, or forge it once you own the legendary.'
+      : it.rarity === 4
       ? 'Not found yet. Finish a season boss with a record and its drop is a legendary. Or work up to it at the forge.'
       : `Not found yet. It drops from reward cards, bosses and gremlins${below ? `, or forge it once you own the ${below.name}` : ''}.`}</p>`;
   }
   return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info itemsheet" role="dialog" aria-label="${it.name}" style="--rc:${RARITY_COLOR[it.rarity]}">
-    <div class="item-art ${have ? '' : 'lack'}">${itemIcon(id, 132)}</div>
+    <div class="item-art ${have ? `r${it.rarity}` : 'lack'}">${itemIcon(id, 132)}</div>
     <p class="rar">${RARITY[it.rarity]} ${SLOT_NAME[it.slot].toLowerCase()}</p>
     <h2>${it.name}</h2>
     <p>${perkText(it)}</p>
@@ -991,7 +997,7 @@ function nextReveal() {
       <small>Tap to continue</small>
     </div>`;
   sfx('charge'); buzz(it.rarity >= 3 ? [30, 60, 30, 60, 30, 60, 30, 60, 30] : [30, 80, 30]);
-  rv.timer = setTimeout(burstReveal, [750, 850, 1000, 1350, 1900][it.rarity]);
+  rv.timer = setTimeout(burstReveal, [750, 850, 1000, 1350, 1900, 2600][it.rarity]);
 }
 function burstReveal() {
   if (rv.phase !== 'charge') return;
@@ -1009,7 +1015,7 @@ function burstReveal() {
     sparks.innerHTML = html;
     if (r >= 3) { document.body.classList.add('quake'); setTimeout(() => document.body.classList.remove('quake'), 650); }
   }
-  sfx(`loot${r}`); buzz([[40], [40, 40, 60], [40, 40, 40, 40, 100], [60, 40, 60, 40, 60, 40, 200], [100, 50, 100, 50, 100, 50, 100, 50, 400]][r]);
+  sfx(`loot${r}`); buzz([[40], [40, 40, 60], [40, 40, 40, 40, 100], [60, 40, 60, 40, 60, 40, 200], [100, 50, 100, 50, 100, 50, 100, 50, 400], [120, 40, 120, 40, 120, 40, 120, 40, 120, 40, 600]][r]);
 }
 
 // ---------- render loop ----------
@@ -1206,7 +1212,7 @@ const actions = {
     };
     if (res.foeDown) {
       // The one moment worth stopping for: the table waits while the boss falls.
-      const prize = res.foeDown.legend ? 'Finished with a record: legendary drop' : res.record ? 'Finished with a record' : 'Boss beaten';
+      const prize = res.foeDown.mythic ? 'The perfect kill: mythic drop' : res.foeDown.legend ? 'Finished with a record: legendary drop' : res.record ? 'Finished with a record' : 'Boss beaten';
       strike(res, was, 'down', prize);
       $app.classList.add('locked');
       setTimeout(next, 2000);

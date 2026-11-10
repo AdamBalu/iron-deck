@@ -446,6 +446,28 @@ button.dcard:active { transform: scale(.95) rotate(-1deg); }
 @keyframes sway { 50% { transform: skewX(-2.5deg); } }
 .hero .gear.r3, .icon-art.r3 { filter: drop-shadow(0 0 3px rgba(199, 125, 255, .75)); }
 .hero .gear.r4, .icon-art.r4 { filter: drop-shadow(0 0 4px rgba(255, 210, 63, .9)); }
+.hero .gear.r5, .icon-art.r5 { filter: drop-shadow(0 0 3.5px rgba(255, 77, 109, .85)); }
+
+/* Mythic: the frame itself is alive. A band of colour runs round the border and a sheen crosses the glass. */
+@property --prism { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes prism { to { --prism: 360deg; } }
+@keyframes sheen { 0%, 52% { transform: translateX(-130%) skewX(-18deg); } 100% { transform: translateX(130%) skewX(-18deg); } }
+.slot.r5, .rung.r5.have, .forgerow .rung.r5, .itemsheet .item-art.r5 {
+  border: 2px solid transparent; overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rc) 38%, var(--deep)), var(--pit) 88%) padding-box,
+    conic-gradient(from var(--prism), #FF4D6D, #FFD23F, #FFFFFF, #5CF2FF, #C77DFF, #FF4D6D) border-box;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--rc) 65%, transparent), inset 0 0 14px color-mix(in srgb, var(--rc) 35%, transparent);
+  animation: prism 3.2s linear infinite;
+}
+.slot.r5::before, .rung.r5.have::before, .forgerow .rung.r5::before, .itemsheet .item-art.r5::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent 30%, rgba(255, 255, 255, .42) 50%, transparent 70%);
+  animation: sheen 2.8s ease-in-out infinite;
+}
+.itemsheet .item-art.r5 { position: relative; }
+.rung.r5.lack { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rc) 45%, transparent); }
+.gearloot.r5 .lootface { box-shadow: inset 0 0 0 2.5px var(--rc), inset 0 0 26px color-mix(in srgb, var(--rc) 35%, transparent); }
 .glint { animation: glint 2.2s ease-in-out infinite; }
 @keyframes glint { 50% { opacity: .55; } }
 /* ----- account: choosing between two saves ----- */
@@ -476,10 +498,13 @@ button.dcard:active { transform: scale(.95) rotate(-1deg); }
 .forge h3 small, .armory h3 small { font-family: var(--body); font-weight: 400; font-size: 13.5px; color: var(--muted); margin-left: 6px; }
 .armory hr { border: 0; border-top: 1px solid var(--hair); margin: 10px 0; }
 .rarities { display: flex; justify-content: flex-end; gap: 0; margin: 12px 0 4px; }
-.rarities span { width: 43px; margin-left: 4px; text-align: center; font-size: 9.5px; font-weight: 700; color: var(--rc); }
+.armory { --rung: 35px; }
+.rarities span { width: var(--rung); margin-left: 4px; display: flex; justify-content: center; font-size: 8px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; color: var(--rc); }
 .line { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
 .line > span { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; }
 .rung .icon-art { width: 38px; height: 38px; }
+.armory .rung { width: var(--rung); height: var(--rung); }
+.armory .rung .icon-art { width: calc(var(--rung) - 5px); height: calc(var(--rung) - 5px); }
 .rungs { display: flex; gap: 4px; }
 .rung {
   width: 43px; height: 43px; border-radius: 10px; display: grid; place-items: center; position: relative;
@@ -593,7 +618,13 @@ button.dcard:active { transform: scale(.95) rotate(-1deg); }
 /* epic and legendary shake the room; legendary also takes longer to break open and floods gold */
 body.quake #app, body.quake #reveal { animation: quake .6s linear; }
 @keyframes quake { 10% { transform: translate(-7px, 4px); } 25% { transform: translate(6px, -5px); } 40% { transform: translate(-5px, -3px); } 55% { transform: translate(5px, 4px); } 70% { transform: translate(-3px, 2px); } 85% { transform: translate(2px, -2px); } }
-#reveal.r4.charge .rv-card { animation: drop-in .38s var(--spring) both, rattle .07s linear .38s infinite; }
+#reveal.r4.charge .rv-card, #reveal.r5.charge .rv-card { animation: drop-in .38s var(--spring) both, rattle .07s linear .38s infinite; }
+/* mythic: the rays run through every colour and the whole screen pulses while it charges */
+#reveal.r5 .rv-rays { background: repeating-conic-gradient(from 0deg, #FF4D6D 0 4deg, transparent 4deg 10deg, #FFD23F 10deg 13deg, transparent 13deg 19deg, #5CF2FF 19deg 22deg, transparent 22deg 28deg, rgba(255, 255, 255, .7) 28deg 30deg, transparent 30deg 36deg); }
+#reveal.r5.burst .rv-rays { opacity: 1; }
+#reveal.r5.burst .rv-flash { animation: flash 1.3s ease-out both; }
+#reveal.r5.charge { animation: dread .5s ease-in-out infinite alternate; }
+@keyframes dread { to { background-color: color-mix(in srgb, var(--rc) 22%, transparent); } }
 #reveal.r4 .rv-rays { background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--rc) 75%, transparent) 0 5deg, transparent 5deg 12deg, rgba(255, 255, 255, .5) 12deg 14deg, transparent 14deg 24deg); }
 #reveal.r4.burst .rv-rays { opacity: .95; }
 #reveal.r4.burst .rv-flash { animation: flash 1s ease-out both; }
@@ -746,11 +777,11 @@ body.quake #app, body.quake #reveal { animation: quake .6s linear; }
   .slot.empty small { font-size: 14px; }
   .pedestal .hero { width: 250px; height: 412px; }
   .pedestal::before { width: 380px; height: 380px; margin: -190px; }
-  .armory { --rung: clamp(54px, 5.2vw, 72px); }
+  .armory { --rung: clamp(38px, 6vw - 28px, 62px); }
   .rung { width: var(--rung); height: var(--rung); border-radius: 15px; }
   .rung .icon-art { width: calc(var(--rung) - 10px); height: calc(var(--rung) - 10px); }
   .rungs { gap: 7px; }
-  .rarities span { width: var(--rung); margin-left: 7px; font-size: 12.5px; }
+  .rarities span { width: var(--rung); margin-left: 7px; font-size: 11.5px; letter-spacing: 0; }
   .line { padding: 4px 0; }
   .line > span { font-size: 17px; }
   .armory .empty { font-size: 16px; }

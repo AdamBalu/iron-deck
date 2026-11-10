@@ -253,47 +253,48 @@ export const COMBOS = {
 // Thirteen lines of equipment (six weapons, seven pieces of armour), each a ladder of five rarities.
 // Items drop from reward cards, bosses and, now and then, a gremlin. Iron earned from every set
 // forges the next rung of a line you already own.
-export const RARITY = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
-export const RARITY_COLOR = ['#B5B8C8', '#58E0A0', '#4CC9F0', '#C77DFF', '#FFD23F'];
+export const RARITY = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
+export const RARITY_COLOR = ['#B5B8C8', '#58E0A0', '#4CC9F0', '#C77DFF', '#FFD23F', '#FF4D6D'];
 // Iron needed to forge an item of each rarity from the one below it.
-export const FORGE_COST = [0, 40, 110, 280, 700];
+// Mythic, the last rung, never drops by luck: it is forged, or won with a perfect kill (see logSet in the engine).
+export const FORGE_COST = [0, 40, 110, 280, 700, 1800];
 
 // Each weapon type does one thing. values: how much, by rarity.
 export const WEAPONS = {
-  sword:      { name: 'Sword', many: 'swords',      perk: 'crit',     values: [4, 8, 13, 19, 28],
-    names: ['Training Sword', "Soldier's Blade", "Knight's Longsword", 'Runeblade', 'Dawnbreaker'] },
-  zweihander: { name: 'Zweihander', many: 'zweihanders', perk: 'finisher', values: [14, 26, 40, 58, 80],
-    names: ['Rusty Zweihander', "Mercenary's Zweihander", "Giant's Zweihander", 'Stormcleaver', 'Zweihander of the Iron Lord'] },
-  hammer:     { name: 'Hammer', many: 'hammers',     perk: 'opener',   values: [5, 9, 14, 20, 28],
-    names: ['Wooden Mallet', "Smith's Hammer", 'Warhammer', 'Thunder Maul', 'Wallbreaker'] },
-  axe:        { name: 'Axe', many: 'axes',        perk: 'weak',     values: [4, 7, 11, 16, 22],
-    names: ['Hatchet', 'Battle Axe', 'Double-Bit Axe', 'Frost Reaver', 'The Excuse Cleaver'] },
-  mace:       { name: 'Mace', many: 'maces',       perk: 'flat',     values: [1, 2, 3, 4, 6],
-    names: ['Club', 'Flanged Mace', 'Morning Star', 'Skullshaker', 'The Snooze Smasher'] },
-  halberd:    { name: 'Polearm', many: 'polearms',    perk: 'combo',    values: [3, 6, 9, 13, 18],
-    names: ['Pike', 'Halberd', 'Royal Glaive', 'Dragon Lance', "Tomorrow's End"] },
+  sword:      { name: 'Sword', many: 'swords',      perk: 'crit',     values: [4, 8, 13, 19, 28, 40],
+    names: ['Training Sword', "Soldier's Blade", "Knight's Longsword", 'Runeblade', 'Dawnbreaker', 'Neverskip'] },
+  zweihander: { name: 'Zweihander', many: 'zweihanders', perk: 'finisher', values: [14, 26, 40, 58, 80, 115],
+    names: ['Rusty Zweihander', "Mercenary's Zweihander", "Giant's Zweihander", 'Stormcleaver', 'Zweihander of the Iron Lord', 'Zweihander of a Thousand Reps'] },
+  hammer:     { name: 'Hammer', many: 'hammers',     perk: 'opener',   values: [5, 9, 14, 20, 28, 40],
+    names: ['Wooden Mallet', "Smith's Hammer", 'Warhammer', 'Thunder Maul', 'Wallbreaker', 'Plateau Crusher'] },
+  axe:        { name: 'Axe', many: 'axes',        perk: 'weak',     values: [4, 7, 11, 16, 22, 32],
+    names: ['Hatchet', 'Battle Axe', 'Double-Bit Axe', 'Frost Reaver', 'The Excuse Cleaver', 'Doubtsplitter'] },
+  mace:       { name: 'Mace', many: 'maces',       perk: 'flat',     values: [1, 2, 3, 4, 6, 9],
+    names: ['Club', 'Flanged Mace', 'Morning Star', 'Skullshaker', 'The Snooze Smasher', 'The Wake-Up Call'] },
+  halberd:    { name: 'Polearm', many: 'polearms',    perk: 'combo',    values: [3, 6, 9, 13, 18, 26],
+    names: ['Pike', 'Halberd', 'Royal Glaive', 'Dragon Lance', "Tomorrow's End", 'Spear of Today'] },
 };
 
 // Armour: each piece strengthens one suit. The helm pays points instead.
 export const ARMOR = {
-  helm:  { name: 'Helm',        suit: null,      values: [4, 8, 12, 18, 25],
-    names: ['Leather Cap', 'Iron Helm', "Knight's Helm", 'Horned Warhelm', 'Crown of Reps'] },
-  chest: { name: 'Breastplate', suit: 'chest',   values: [1, 2, 3, 5, 7],
-    names: ['Padded Vest', 'Chainmail', 'Steel Breastplate', 'Dragonscale Plate', 'Ironheart'] },
-  arms:  { name: 'Bracers',     suit: 'biceps',  values: [1, 2, 3, 5, 7],
-    names: ['Cloth Wraps', 'Leather Bracers', 'Steel Bracers', 'Runed Armguards', "Titan's Bracers"] },
-  cloak: { name: 'Cloak',       suit: 'back',    values: [1, 2, 3, 5, 7],
-    names: ['Old Blanket', "Traveller's Cloak", "Knight's Cape", 'Shadow Mantle', 'Mantle of the Unbroken'] },
-  hands: { name: 'Gauntlets',   suit: 'triceps', values: [1, 2, 3, 5, 7],
-    names: ['Work Gloves', 'Leather Gloves', 'Steel Gauntlets', 'Spiked Gauntlets', 'Grip of Legends'] },
-  belt:  { name: 'Belt',        suit: 'abs',     values: [1, 2, 3, 5, 7],
-    names: ['Rope Belt', 'Leather Belt', "Champion's Belt", 'Girdle of Might', 'The Golden Plate'] },
-  boots: { name: 'Boots',       suit: 'rest',    values: [1, 2, 3, 5, 7],
-    names: ['Worn Boots', 'Leather Boots', 'Steel Greaves', 'Stormstriders', 'Gravity Boots'] },
+  helm:  { name: 'Helm',        suit: null,      values: [4, 8, 12, 18, 25, 35],
+    names: ['Leather Cap', 'Iron Helm', "Knight's Helm", 'Horned Warhelm', 'Crown of Reps', 'Halo of Discipline'] },
+  chest: { name: 'Breastplate', suit: 'chest',   values: [1, 2, 3, 5, 7, 10],
+    names: ['Padded Vest', 'Chainmail', 'Steel Breastplate', 'Dragonscale Plate', 'Ironheart', 'Heart of the Mountain'] },
+  arms:  { name: 'Bracers',     suit: 'biceps',  values: [1, 2, 3, 5, 7, 10],
+    names: ['Cloth Wraps', 'Leather Bracers', 'Steel Bracers', 'Runed Armguards', "Titan's Bracers", 'Bracers of the Thousandth Curl'] },
+  cloak: { name: 'Cloak',       suit: 'back',    values: [1, 2, 3, 5, 7, 10],
+    names: ['Old Blanket', "Traveller's Cloak", "Knight's Cape", 'Shadow Mantle', 'Mantle of the Unbroken', 'Wings of the Unbowed'] },
+  hands: { name: 'Gauntlets',   suit: 'triceps', values: [1, 2, 3, 5, 7, 10],
+    names: ['Work Gloves', 'Leather Gloves', 'Steel Gauntlets', 'Spiked Gauntlets', 'Grip of Legends', 'The Grip That Never Lets Go'] },
+  belt:  { name: 'Belt',        suit: 'abs',     values: [1, 2, 3, 5, 7, 10],
+    names: ['Rope Belt', 'Leather Belt', "Champion's Belt", 'Girdle of Might', 'The Golden Plate', 'Core of a Dying Star'] },
+  boots: { name: 'Boots',       suit: 'rest',    values: [1, 2, 3, 5, 7, 10],
+    names: ['Worn Boots', 'Leather Boots', 'Steel Greaves', 'Stormstriders', 'Gravity Boots', 'Stride of Giants'] },
 };
 export const SLOT_ORDER = ['weapon', 'helm', 'chest', 'arms', 'hands', 'cloak', 'belt', 'boots'];
 export const SLOT_NAME = { weapon: 'Weapon', ...Object.fromEntries(Object.entries(ARMOR).map(([k, a]) => [k, a.name])) };
-// A line is one ladder of five: a weapon type or an armour slot.
+// A line is one ladder of six: a weapon type or an armour slot.
 export const LINES = [...Object.keys(WEAPONS), ...Object.keys(ARMOR)];
 
 // id is "<line>-<rarity>", e.g. "zweihander-4".

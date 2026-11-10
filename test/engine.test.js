@@ -834,3 +834,56 @@ test('every boss is weak to one kind of weapon, and wielding it makes each hit a
   const peek = nextHit(s, tinyHand([{ ex: 'bench-press', w: 20 }]));
   assert.equal(peek.plain, keen.dmg, 'the preview knows about it too');
 });
+
+import { RARITY, LINES } from '../js/data.js';
+
+test('mythic is a sixth rung on every line, stronger than the legendary and far dearer to forge', () => {
+  assert.equal(RARITY.length, 6);
+  assert.equal(RARITY[5], 'Mythic');
+  for (const line of LINES) {
+    const top = ITEMS[`${line}-5`], below = ITEMS[`${line}-4`];
+    assert.ok(top, `${line} has no mythic`);
+    assert.equal(top.rarity, 5);
+    assert.ok(top.value > below.value, `${top.name} is no stronger than ${below.name}`);
+  }
+  assert.ok(FORGE_COST[5] >= 2 * FORGE_COST[4], 'a mythic costs at least twice a legendary');
+  const s = setup();
+  grant(s, 'hammer-4');
+  s.iron = FORGE_COST[5] - 1;
+  assert.equal(forge(s, 'hammer-5'), false, 'not enough iron');
+  s.iron = FORGE_COST[5];
+  assert.equal(forge(s, 'hammer-5'), true);
+  assert.equal(s.iron, 0);
+  assert.equal(equipped(s, 'weapon').id, 'hammer-5', 'the legendary in your hand is replaced by the mythic');
+});
+
+test('a mythic never turns up by luck, however many bosses have fallen', () => {
+  const s = setup();
+  s.foesDown = 200;
+  const rng = mulberry32(31);
+  for (let i = 0; i < 4000; i++) assert.ok(ITEMS[rollItem(s, rng)].rarity <= 4);
+  for (let i = 0; i < 400; i++) assert.ok(ITEMS[rollItem(s, rng, { min: 3 })].rarity <= 4);
+});
+
+test('the perfect kill drops a mythic: a season boss, finished with a record, with the weapon it fears in hand', () => {
+  const kill = (prep, reps) => {
+    const s = setup();
+    s.foe = { k: 2, hp: 5, max: 1370 };
+    prep(s);
+    const hand = tinyHand([{ ex: 'bench-press', w: 20 }]);
+    const hit = logSet(s, hand, reps, T0);
+    const sum = finishHand(s, hand, mulberry32(9), T0);
+    return { hit, rarity: Math.max(-1, ...sum.loot.filter(l => l.type === 'item').map(l => ITEMS[l.id].rarity)) };
+  };
+  const feared = (s) => grant(s, `${foeInfo(2).bane}-0`);
+  const other = (s) => grant(s, `${Object.keys(WEAPONS).find(w => w !== foeInfo(2).bane)}-0`);
+  const perfect = kill((s) => { feared(s); benchRecord(s); }, 9);
+  assert.equal(perfect.hit.foeDown.mythic, true);
+  assert.equal(perfect.rarity, 5);
+  const wrongWeapon = kill((s) => { other(s); benchRecord(s); }, 9);
+  assert.equal(wrongWeapon.hit.foeDown.mythic, false);
+  assert.equal(wrongWeapon.rarity, 4, 'a record with another weapon is still a legendary');
+  const noRecord = kill(feared, 10);
+  assert.equal(noRecord.hit.foeDown.mythic, false);
+  assert.ok(noRecord.rarity <= 4);
+});

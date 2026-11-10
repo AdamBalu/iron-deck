@@ -697,9 +697,10 @@ export function logSet(state, hand, reps, now, rng = null) {
   if (state.foe.hp <= 0) {
     const info = foeInfo(state.foe.k);
     // The final blow on a season boss, landed as a record, makes its drop a legendary.
-    foeDown = { ...info, legend: info.big && hit.crit };
+    // Land it with the weapon the boss fears and the drop is a mythic: the only way one ever drops.
+    foeDown = { ...info, legend: info.big && hit.crit, mythic: info.big && hit.crit && hit.bane };
     state.foesDown++;
-    (hand.downs ??= []).push({ k: state.foe.k, legend: foeDown.legend });
+    (hand.downs ??= []).push({ k: state.foe.k, legend: foeDown.legend, mythic: foeDown.mythic });
     state.foe = spawnFoe(state.foe.k + 1, state);
   }
   let drop = null;
@@ -942,11 +943,11 @@ export function finishHand(state, hand, rng, now) {
   }
 
   // Bosses beaten during this hand: bonus points and a guaranteed drop each.
-  const downs = (hand.downs ?? []).map(d => ({ ...foeInfo(d.k), legend: d.legend }));
+  const downs = (hand.downs ?? []).map(d => ({ ...foeInfo(d.k), legend: d.legend, mythic: !!d.mythic }));
   let foePoints = 0;
   for (const d of downs) {
     foePoints += d.reward;
-    loot.push(...drawLoot(state, rng, { min: d.big ? 3 : 1, force: d.legend ? 4 : null }));
+    loot.push(...drawLoot(state, rng, { min: d.big ? 3 : 1, force: d.mythic ? 5 : d.legend ? 4 : null }));
   }
   state.xp += foePoints;
   // Running average of what one set hits for, used to size the next boss.
