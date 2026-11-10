@@ -5,6 +5,10 @@ import {
 } from './data.js';
 import { itemIcon, heroSvg, gremlinSvg, bossSvg } from './art.js';
 import { picto } from './picto.js';
+import { play, prime } from './sound.js';
+import { decide, describe } from './sync.js';
+import { connect } from './cloud.js';
+import { FIREBASE } from './config.js';
 import * as E from './engine.js';
 
 const KEY = 'irondeck.v1';
@@ -18,9 +22,98 @@ function load() {
   try { const raw = localStorage.getItem(KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 1 ? E.migrate(s) : null; }
   catch { return null; }
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage full or blocked: keep playing */ } }
+// Every real change is stamped with the time, which is how two devices tell whose save is newer.
+// quiet: housekeeping the player did not do (a hand dealt ahead of time), which must not count as a change.
+function save(quiet = false) {
+  if (!quiet) S.stamp = now();
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage full or blocked: keep playing */ }
+  if (!quiet) queueSync();
+}
 
 let S = load();
+
+// ---------- one save across devices ----------
+// The rules are in sync.js and the network in cloud.js. This part runs them and puts the result on screen.
+
+const SYNC_KEY = 'irondeck.sync';
+const sync = {
+  cloud: null, user: null, status: 'off', problem: '', timer: null, running: false, again: false, waiting: false, ask: null,
+  // which account this device last matched, and the stamp of the save they agreed on
+  link: (() => { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) ?? {}; } catch { return {}; } })(),
+};
+function setLink(uid, base) {
+  sync.link = { uid, base };
+  try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync.link)); } catch { /* ignore */ }
+}
+// A save from elsewhere never lands in the middle of a hand, its rewards or an opening item.
+const syncBusy = () => ['deal', 'play', 'rest', 'finish'].includes(ui.screen) || !!rv.phase;
+function queueSync(ms = 2500) {
+  if (!sync.user) return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(runSync, ms);
+}
+async function pushSave(uid) {
+  // A save from before sign-in existed has no stamp yet: give it one and keep it.
+  if (S && !S.stamp) { S.stamp = now(); save(true); }
+  const stamp = S ? S.stamp : now();
+  const facts = S ? { stamp, xp: S.xp, empty: false, ...describe(S, E.levelFor) } : { stamp, xp: 0, empty: true };
+  await sync.cloud.write(uid, facts, S ? JSON.stringify(S) : null);
+  setLink(uid, stamp);
+}
+async function pullSave(uid, cloud) {
+  let next = null;
+  if (!cloud.empty) {
+    const data = JSON.parse(await sync.cloud.readSave(uid));
+    if (data?.v !== 1 || !data.settings || !data.lifts) throw new Error('bad-save');
+    next = E.migrate(data);
+    next.stamp = cloud.stamp;
+  }
+  try {
+    // The save being replaced is kept once, in case the wrong one was chosen.
+    if (S) localStorage.setItem(`${KEY}.replaced`, JSON.stringify(S));
+    if (next) localStorage.setItem(KEY, JSON.stringify(next)); else localStorage.removeItem(KEY);
+  } catch { /* storage full or blocked */ }
+  S = next;
+  setLink(uid, cloud.stamp);
+  ui.hand = null; ui.summary = null; ui.dropQueue = [];
+  go(S ? 'home' : 'setup');
+  if (S) toast('Progress loaded from your account.');
+}
+async function runSync() {
+  if (!sync.cloud || !sync.user) return;
+  if (sync.running) { sync.again = true; return; }
+  sync.running = true;
+  clearTimeout(sync.timer);
+  const uid = sync.user.uid, linked = sync.link.uid === uid;
+  try {
+    const cloud = await sync.cloud.readMeta(uid);
+    const what = decide({
+      local: S ? { stamp: S.stamp ?? 0, xp: S.xp } : null,
+      cloud: cloud ? { stamp: cloud.stamp, xp: cloud.xp ?? 0, empty: !!cloud.empty } : null,
+      base: linked ? sync.link.base : null, linked, busy: syncBusy(),
+    });
+    if (what === 'push') await pushSave(uid);
+    else if (what === 'pull') await pullSave(uid, cloud);
+    else if (what === 'ask') { sync.ask = cloud; ui.sheet = 'sync'; render(); }
+    else if (what === 'none' && cloud && !linked) setLink(uid, cloud.stamp);
+    sync.waiting = what === 'wait';
+    sync.status = what === 'ask' || what === 'wait' ? what : 'ok';
+  } catch (e) {
+    sync.status = navigator.onLine === false ? 'offline' : 'error';
+    sync.problem = e?.code ?? e?.message ?? '';
+  }
+  sync.running = false;
+  if (ui.screen === 'settings' || ui.screen === 'setup') render();
+  if (sync.again) { sync.again = false; queueSync(); }
+}
+const syncText = () => ({
+  off: '', busy: 'Checking your online save.',
+  ok: 'Your progress is saved online.',
+  wait: 'A newer save is waiting. It loads as soon as this hand is done.',
+  ask: 'This device and your account hold different progress. Choose one to carry on.',
+  offline: 'You are offline. Your progress is safe on this device and goes online when you are back.',
+  error: `Your online save could not be reached${sync.problem ? ` (${sync.problem})` : ''}. It will try again.`,
+}[sync.status]);
 const ui = {
   screen: S ? 'home' : 'setup', enter: true, sheet: null,
   setup: { bench: 20, curl: 12.5, step: 2.5, max: 30, incline: true, quickChange: false },
@@ -103,37 +196,11 @@ function applyTheme() {
 
 // ---------- sound, vibration, screen lock ----------
 
-let actx = null;
-function sfx(name) {
-  if (!S?.settings.sound) return;
-  try {
-    actx ??= new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
-    const t = actx.currentTime;
-    const notes = {
-      tick: [[620, 0, 0.07]],
-      rest: [[880, 0, 0.14], [880, 0.2, 0.14], [1175, 0.4, 0.26]],
-      record: [[523, 0, 0.1], [659, 0.09, 0.1], [784, 0.18, 0.1], [1047, 0.27, 0.3]],
-      flip: [[392, 0, 0.08], [587, 0.08, 0.08], [784, 0.16, 0.22]],
-      win: [[392, 0, 0.12], [523, 0.12, 0.12], [659, 0.24, 0.12], [784, 0.36, 0.34]],
-      charge: [[196, 0, 0.18], [233, 0.16, 0.18], [277, 0.32, 0.18], [330, 0.48, 0.22]],
-      loot0: [[523, 0, 0.12], [659, 0.1, 0.2]],
-      loot1: [[523, 0, 0.1], [659, 0.09, 0.1], [784, 0.18, 0.24]],
-      loot2: [[523, 0, 0.1], [659, 0.08, 0.1], [784, 0.16, 0.1], [1047, 0.24, 0.3]],
-      loot3: [[392, 0, 0.1], [523, 0.08, 0.1], [659, 0.16, 0.1], [784, 0.24, 0.1], [1047, 0.32, 0.12], [1319, 0.42, 0.4]],
-      loot4: [[262, 0, 0.5], [392, 0.0, 0.5], [523, 0.1, 0.12], [659, 0.2, 0.12], [784, 0.3, 0.12], [1047, 0.4, 0.14], [1319, 0.52, 0.14], [1568, 0.64, 0.6]],
-    }[name] ?? [];
-    for (const [f, at, dur] of notes) {
-      const o = actx.createOscillator(), g = actx.createGain();
-      o.type = 'triangle'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t + at);
-      g.gain.exponentialRampToValueAtTime(0.16, t + at + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
-      o.connect(g).connect(actx.destination);
-      o.start(t + at); o.stop(t + at + dur + 0.02);
-    }
-  } catch { /* no audio available */ }
-}
+function sfx(name, opts) { if (S?.settings.sound) play(name, opts); }
+// Clips load on the first tap, so the first sound that matters is ready when it is needed.
+document.addEventListener('pointerdown', () => { if (S?.settings.sound) prime(); }, { once: true, capture: true });
+// Hammers, maces and bare fists land with a thud; anything with an edge cuts.
+const blow = () => (['sword', 'zweihander', 'axe', 'halberd'].includes(E.equipped(S, 'weapon')?.line) ? 'blade' : 'blunt');
 function buzz(pattern) { if (S?.settings.buzz && navigator.vibrate) { try { navigator.vibrate(pattern); } catch { /* ignore */ } } }
 
 let lock = null;
@@ -154,25 +221,51 @@ function showFx(html, ms) {
   setTimeout(() => { if (mine === fxToken) $fx.innerHTML = ''; }, ms);
 }
 
-function celebrate(text, sub = '', hold = 1300, above = '') {
-  const colors = SUIT_ORDER.map(s => SUITS[s].color);
+// The fight, played for a moment after every set: your hero lunges and the boss takes the hit.
+// was: the boss as it stood before the set. mode: 'hit', 'crit' for a record, 'down' for the final blow.
+const STRIKE_AT = 0.36; // seconds into the scene at which the blow lands
+function strike(res, was, mode, prize = '') {
+  if (!res.dmg) return;
+  const info = E.foeInfo(was.k), kind = blow();
+  const pct = (hp) => Math.max(0, Math.round(hp / was.max * 100));
+  const notes = [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : []), ...(res.bane ? [`Fears ${WEAPONS[info.bane].many}`] : [])];
+  const title = mode === 'down' ? `<p class="clash-title"><b>${info.name} is down</b><small>${prize}</small></p>`
+    : mode === 'crit' ? '<p class="clash-title"><b>New record</b><small>Critical hit</small></p>' : '';
+  const cut = kind === 'blade' ? 'M4 90Q60 64 96 6Q72 72 4 90Z' : 'M50 2 60 36 96 30 68 54 88 90 52 68 22 94 32 58 4 40 40 38Z';
+  let html = `<div class="clash ${mode} ${kind}">
+      <div class="clash-stage">
+        <span class="clash-hero">${heroSvg(S.equip, { size: 132 })}</span>
+        <span class="clash-foe ${info.big ? 'big' : ''}">
+          <span class="clash-face">${bossSvg(was.k, 124)}</span>
+          <svg class="clash-cut" viewBox="0 0 100 100" aria-hidden="true"><path d="${cut}"/></svg>
+          <b class="clash-dmg">${num(res.dmg)}</b>
+        </span>
+      </div>
+      <div class="clash-bar"><b>${info.name}</b><span class="hp"><i style="--from:${pct(was.hp)}%;--to:${pct(was.hp - res.dmg)}%"></i></span></div>
+      <p class="clash-notes">${notes.length ? `<span>${notes.join(' + ')}</span>` : ''}<span>${gremlinSvg(20)}+${res.iron} iron</span></p>
+      ${title}
+    </div>`;
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let html = `<div class="shoutwrap">${above}<div class="shout ${text.length > 14 ? 'long' : ''}">${text}${sub ? `<small>${sub}</small>` : ''}</div></div>`;
-  if (!calm) {
+  if (mode !== 'hit' && !calm) {
+    const colors = SUIT_ORDER.map(s => SUITS[s].color);
     for (let i = 0; i < 34; i++) {
       const a = Math.random() * Math.PI * 2, d = 90 + Math.random() * 190;
-      html += `<i class="bit" style="--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d - 60}px;--rot:${Math.random() * 720 - 360}deg;background:${colors[i % colors.length]};animation-delay:${Math.random() * 90}ms"></i>`;
+      html += `<i class="bit" style="--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d - 60}px;--rot:${Math.random() * 720 - 360}deg;background:${colors[i % colors.length]};animation-delay:${STRIKE_AT * 1000 + Math.random() * 90}ms"></i>`;
     }
   }
+  const hold = { hit: 1350, crit: 1750, down: 2300 }[mode];
   showFx(html, hold);
+  ui.fxUntil = now() + hold;
+  sfx(`${mode}-${kind}`, { delay: calm ? 0 : STRIKE_AT });
+  setTimeout(() => {
+    buzz({ hit: 30, crit: [40, 30, 40, 30, 120], down: [60, 40, 60, 40, 60, 40, 220] }[mode]);
+    if (mode !== 'hit' && !calm) { document.body.classList.add('quake'); setTimeout(() => document.body.classList.remove('quake'), 650); }
+  }, calm ? 0 : STRIKE_AT * 1000);
 }
-
-// The damage number that flies off a set.
-function hitPop(res) {
-  if (!res.dmg) return;
-  const notes = [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : [])];
-  showFx(`<div class="hit">${res.dmg}${notes.length ? `<small>${notes.join(' + ')}</small>` : ''}</div>
-    <div class="poof">${gremlinSvg(38)}<b>+${res.iron} iron</b></div>`, 950);
+// Loot waits for the fight to finish before it opens.
+function revealDrops() {
+  if (!ui.dropQueue.length) return;
+  setTimeout(() => reveal(ui.dropQueue.splice(0), render), Math.max(0, (ui.fxUntil ?? 0) - now()));
 }
 
 function toast(text) {
@@ -211,7 +304,10 @@ function setupScreen() {
       ${choice('incline', 'Bench back tilts up', '', [[true, 'Yes'], [false, 'No, flat only']])}
       ${choice('quickChange', 'Changing the weight is', '', [[false, 'Slow, screw collars'], [true, 'Quick, dial or pin']])}
     </section>
-    <button class="btn" data-act="setup-go">Deal my first hand</button>`;
+    <button class="btn" data-act="setup-go">Deal my first hand</button>
+    ${!sync.cloud ? '' : sync.user
+      ? `<p class="signed">Signed in as ${sync.user.name}. ${sync.status === 'ok' ? 'No saved progress there yet: set up above and it will be kept.' : syncText()}</p>`
+      : '<button class="ghost" data-act="sign-in">Played on another device? Sign in to load your progress</button>'}`;
 }
 
 function foeStrip({ compact = false, exposed = false } = {}) {
@@ -232,7 +328,7 @@ function ensurePending() {
   const p = S.pending;
   if (!p || now() - p.createdAt > 3 * HOUR || p.mult !== E.multiplier(S, now())) {
     S.pending = E.dealHand(S, 'full', rng, now());
-    save();
+    save(true);
   }
   return S.pending;
 }
@@ -652,6 +748,15 @@ function settingsScreen() {
       <span class="brand">Settings</span><span></span>
     </header>
     ${ui.notice ? `<p class="banner">${ui.notice}</p>` : ''}
+    ${!sync.cloud ? '' : `<section class="panel">
+      <div class="field col"><div><b>Account</b><small>${sync.user
+        ? `Signed in as ${sync.user.name}. ${syncText()}`
+        : 'Sign in to keep one save across your phone and your computer.'}</small></div>
+        <div class="seg">${sync.user
+          ? '<button data-act="sync-now">Sync now</button><button data-act="sign-out">Sign out</button>'
+          : '<button data-act="sign-in">Sign in with Google</button>'}</div>
+      </div>
+    </section>`}
     <section class="panel">
       <div class="field col"><div><b>Look</b><small>New looks arrive with seasons and reward cards</small></div><div class="swatches">${looks}</div></div>
       ${choice('sound', 'Sounds', [[true, 'On'], [false, 'Off']])}
@@ -664,10 +769,10 @@ function settingsScreen() {
       ${choice('quickChange', 'Changing the weight is', [[false, 'Slow, screw collars'], [true, 'Quick, dial or pin']])}
     </section>
     <section class="panel">
-      <div class="field col"><div><b>Backup</b><small>Your history lives only on this phone. Save a file now and then.</small></div>
+      <div class="field col"><div><b>Backup</b><small>${sync.user ? 'Your progress is kept in your account. A file is a second copy you hold yourself.' : 'Your history lives only on this device. Save a file now and then.'}</small></div>
         <div class="seg"><button data-act="export">Save a backup file</button><label class="filebtn">Restore from a file<input type="file" accept="application/json,.json" id="import"></label></div>
       </div>
-      <div class="field col"><div><b>Start over</b><small>Erases every hand, record and card on this phone.</small></div>
+      <div class="field col"><div><b>Start over</b><small>${sync.user ? 'Erases every hand, record and card, here and on every device signed in to your account.' : 'Erases every hand, record and card on this device.'}</small></div>
         <div class="seg"><button class="danger" data-act="reset">${ui.confirmReset ? 'Tap again to erase everything' : 'Erase everything'}</button></div>
       </div>
     </section>`;
@@ -706,6 +811,17 @@ function sheetView() {
       <button data-act="finish-early">Finish the hand here and collect</button>
       <button data-act="pause">Pause and go back to the table</button>
       <button class="quiet" data-act="close-sheet">Keep going</button>
+    </div>`;
+  }
+  if (ui.sheet === 'sync' && sync.ask && S) {
+    const day = (at) => (at ? `last played ${new Date(at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}` : 'no hand finished yet');
+    const facts = (f) => `Level ${f.level}, ${f.hands} ${f.hands === 1 ? 'hand' : 'hands'} played, ${day(f.at)}`;
+    return `<div class="scrim"></div><div class="sheet info" role="dialog" aria-label="Choose which progress to keep">
+      <h2>Which progress do you keep?</h2>
+      <p>This device and your account hold different progress, and they cannot be combined. The one you do not pick is replaced.</p>
+      <button class="pick" data-act="sync-keep" data-which="cloud"><b>The one in your account</b><span>${facts(sync.ask)}</span></button>
+      <button class="pick" data-act="sync-keep" data-which="local"><b>The one on this device</b><span>${facts(describe(S, E.levelFor))}</span></button>
+      <button class="quiet" data-act="sign-out">Decide later and sign out</button>
     </div>`;
   }
   if (ui.sheet?.item) return itemSheet(ui.sheet.item);
@@ -770,6 +886,26 @@ function heroScreen() {
       style="--rc:${RARITY_COLOR[it.rarity]}" aria-label="${it.name}${have ? '' : ', not found yet'}">${itemIcon(id, 44)}</button>`;
   };
   const line = (key, label) => `<div class="line"><span>${label}</span><div class="rungs">${[0, 1, 2, 3, 4].map(r => rung(`${key}-${r}`)).join('')}</div></div>`;
+  // What iron can make next: the step above the best item you own in each line, cheapest first.
+  const forgeNext = [...Object.keys(WEAPONS), ...Object.keys(ARMOR)].map((k) => {
+    const top = [4, 3, 2, 1, 0].find(r => S.items[`${k}-${r}`]);
+    return top == null || top === 4 ? null : ITEMS[`${k}-${top + 1}`];
+  }).filter(Boolean).sort((a, b) => FORGE_COST[a.rarity] - FORGE_COST[b.rarity]);
+  const forgeRow = (it) => {
+    const cost = FORGE_COST[it.rarity], ready = S.iron >= cost;
+    return `<div class="forgerow" style="--rc:${RARITY_COLOR[it.rarity]}">
+      <button class="rung r${it.rarity}" data-act="item-info" data-id="${it.id}" aria-label="${it.name}">${itemIcon(it.id, 44)}</button>
+      <div class="forge-main"><b>${it.name}</b><small>${RARITY[it.rarity]}, made from your ${ITEMS[`${it.line}-${it.rarity - 1}`].name}</small>
+        ${ready ? '' : `<span class="hp"><i style="width:${Math.round(S.iron / cost * 100)}%"></i></span>`}</div>
+      ${ready ? `<button class="forge-go" data-act="forge" data-id="${it.id}">Forge<small>${IRON}${cost}</small></button>` : `<span class="forge-need">${num(cost - S.iron)} iron<br>to go</span>`}
+    </div>`;
+  };
+  const forge = `<section class="panel dark forge">
+      <h3>Forge <small>${IRON} ${num(S.iron)} iron</small></h3>
+      <p class="empty">Every set you log earns iron. Iron turns an item you own into the next rarity of the same item, and you keep the old one.</p>
+      ${forgeNext.length ? forgeNext.slice(0, 3).map(forgeRow).join('') : '<p class="empty">Nothing to forge yet. Your first item comes with your first finished hand.</p>'}
+      ${forgeNext.length > 3 ? `<p class="empty">${forgeNext.length - 3} more can be forged later. Tap any greyed-out item below to see its price.</p>` : ''}
+    </section>`;
   return `
     <header class="top">
       <span class="brand">Your hero</span>
@@ -780,14 +916,17 @@ function heroScreen() {
       <div class="pedestal">${heroSvg(S.equip, { size: 168 })}</div>
       <div class="slotcol">${SLOTS_RIGHT.map(slot).join('')}</div>
     </section>
+    <div class="gearcol">
+    ${forge}
     <section class="panel dark armory">
       <h3>Armoury <small>${owned} of ${total}</small></h3>
-      <p class="empty">Tap any item to see it. Gear drops from reward cards, bosses and gremlins, and iron forges the next step up of anything you own.</p>
+      <p class="empty">Tap any item to see it. Gear drops from reward cards, bosses and gremlins, and the forge above makes the next step up of anything you own.</p>
       <div class="rarities">${RARITY.map((n, i) => `<span style="--rc:${RARITY_COLOR[i]}">${n}</span>`).join('')}</div>
       ${Object.entries(WEAPONS).map(([k, w]) => line(k, w.name)).join('')}
       <hr>
       ${Object.entries(ARMOR).map(([k, ar]) => line(k, ar.name)).join('')}
-    </section>`;
+    </section>
+    </div>`;
 }
 
 function itemSheet(id) {
@@ -895,6 +1034,7 @@ function go(screen) {
   render();
   window.scrollTo(0, 0);
   if (screen === 'rest') startRestTicker();
+  if (sync.waiting && !syncBusy()) queueSync(0);
   // Keep one history entry while away from the table, so the phone's back button has somewhere to go.
   const deep = screen !== 'home' && screen !== 'setup';
   try {
@@ -948,7 +1088,7 @@ function startRest(step) {
   initStepUi();
   go('rest');
   // A gremlin dropped something during the last sets: open it now, while there is nothing else to do.
-  if (ui.dropQueue.length) reveal(ui.dropQueue.splice(0), render);
+  revealDrops();
 }
 function endRest(chime) {
   if (ui.screen !== 'rest') return;
@@ -965,9 +1105,12 @@ function finishNow() {
   if (!summary.sets) return go('home');
   ui.summary = summary;
   ui.opened = new Set();
-  sfx('win'); buzz([60, 40, 60, 40, 160]);
+  // The hand's fanfare waits for the last blow to land.
+  const wait = Math.max(0, (ui.fxUntil ?? 0) - now());
+  sfx('win', { delay: wait / 1000 });
+  setTimeout(() => buzz([60, 40, 60, 40, 160]), wait);
   go('finish');
-  if (ui.dropQueue.length) reveal(ui.dropQueue.splice(0), render);
+  revealDrops();
 }
 
 function download(name, text) {
@@ -1001,7 +1144,7 @@ const actions = {
   'go-home'() { go('home'); },
   deal({ mode }) {
     ui.hand = mode === 'quick' ? E.dealHand(S, 'quick', rng, now()) : ensurePending();
-    sfx('flip');
+    sfx('deal');
     go('deal');
   },
   reshuffle() {
@@ -1011,11 +1154,11 @@ const actions = {
     ui.hand = E.dealHand(S, ui.hand.mode, rng, now(), seen);
     if (ui.hand.mode === 'full') S.pending = ui.hand;
     save();
-    sfx('flip'); ui.enter = true; render();
+    sfx('deal'); ui.enter = true; render();
   },
   start() {
     S.current = ui.hand; S.pending = null; save();
-    keepAwake(true); initStepUi(); sfx('tick');
+    keepAwake(true); initStepUi(); sfx('start');
     go('play');
   },
   continue() { keepAwake(true); initStepUi(); go('play'); },
@@ -1052,6 +1195,7 @@ const actions = {
   done() {
     const st = stepNow();
     if (!st) return;
+    const was = { k: S.foe.k, hp: S.foe.hp, max: S.foe.max };
     const res = E.logSet(S, hand(), ui.reps, now(), rng);
     if (res.drop) ui.dropQueue.push(res.drop.id);
     save();
@@ -1061,20 +1205,16 @@ const actions = {
       initStepUi(); go('play');
     };
     if (res.foeDown) {
-      sfx('win'); buzz([60, 40, 60, 40, 60, 40, 220]);
+      // The one moment worth stopping for: the table waits while the boss falls.
       const prize = res.foeDown.legend ? 'Finished with a record: legendary drop' : res.record ? 'Finished with a record' : 'Boss beaten';
-      celebrate(`${res.foeDown.name} is down`, prize, 1900, `<div class="downed">${bossSvg(res.foeDown.k, 150)}</div>`);
+      strike(res, was, 'down', prize);
       $app.classList.add('locked');
-      setTimeout(next, 1700);
-    } else if (res.record) {
-      sfx('record'); buzz([40, 30, 40, 30, 120]);
-      celebrate('New record', `Critical hit for ${res.dmg}`);
-      $app.classList.add('locked');
-      setTimeout(next, 950);
+      setTimeout(next, 2000);
     } else {
-      sfx('tick'); buzz(30);
+      // Every other blow plays over the rest that follows, so the fight never costs you time.
+      if (!res.dmg) { sfx('tick'); buzz(30); }
+      strike(res, was, res.record ? 'crit' : 'hit');
       next();
-      hitPop(res);
     }
   },
   menu() { ui.sheet = 'menu'; render(); },
@@ -1112,23 +1252,24 @@ const actions = {
   'foe-info'() { ui.sheet = 'foe'; render(); },
   'item-info'({ id }) { ui.sheet = { item: id }; render(); },
   'slot-empty'({ slot }) { toast(`No ${SLOT_NAME[slot].toLowerCase()} yet. Play a hand: bosses and reward cards drop gear.`); },
-  equip({ id }) { E.equip(S, id); save(); sfx('flip'); buzz(30); ui.sheet = null; render(); },
+  equip({ id }) { E.equip(S, id); save(); sfx(ITEMS[id].slot === 'weapon' ? 'equip-weapon' : 'equip-armor'); buzz(30); ui.sheet = null; render(); },
   forge({ id }) {
     if (!E.forge(S, id)) return;
     save(); ui.sheet = null; render();
+    sfx('forge'); buzz([40, 120, 40]);
     reveal([id], render);
   },
   'reveal-tap'() {
     if (rv.phase === 'charge') burstReveal();
     else if (now() - rv.shownAt > 450) nextReveal();
   },
-  'reveal-equip'() { E.equip(S, rv.id); save(); sfx('flip'); nextReveal(); },
+  'reveal-equip'() { E.equip(S, rv.id); save(); sfx(ITEMS[rv.id].slot === 'weapon' ? 'equip-weapon' : 'equip-armor'); nextReveal(); },
   set({ key, val }) {
     S.settings[key] = key === 'theme' ? val : key === 'step' ? +val : val === 'true';
     if (key === 'step') S.settings.min = Math.min(S.settings.min, +val);
     S.pending = null;
     save(); render();
-    if (key === 'sound' && val === 'true') sfx('tick');
+    if (key === 'sound' && val === 'true') sfx('place');
   },
   'set-step'({ key, d }) {
     S.settings[key] = Math.max(S.settings.step, Math.min(80, S.settings[key] + +d));
@@ -1142,7 +1283,32 @@ const actions = {
     if (!ui.confirmReset) { ui.confirmReset = true; return render(); }
     try { localStorage.removeItem(KEY); } catch { /* ignore */ }
     S = null;
+    // Signed in, starting over means everywhere: the account is emptied too, and other devices follow.
+    if (sync.user) pushSave(sync.user.uid).catch(() => { sync.status = 'error'; });
     go('setup');
+  },
+  async 'sign-in'() {
+    sync.status = 'busy';
+    try { await sync.cloud.signIn(); } catch { sync.status = 'off'; toast('Sign-in did not finish. Nothing was changed.'); }
+  },
+  async 'sign-out'() {
+    clearTimeout(sync.timer);
+    sync.ask = null; ui.sheet = null;
+    try { await sync.cloud.signOut(); } catch { /* already signed out */ }
+    render();
+  },
+  'sync-now'() { sync.status = 'busy'; render(); runSync(); },
+  async 'sync-keep'({ which }) {
+    const cloud = sync.ask, uid = sync.user?.uid;
+    sync.ask = null; ui.sheet = null;
+    if (!cloud || !uid) return render();
+    try {
+      if (which === 'cloud') await pullSave(uid, cloud); else { await pushSave(uid); render(); toast('This device is now your account save.'); }
+      sync.status = 'ok';
+    } catch (e) {
+      sync.status = 'error'; sync.problem = e?.code ?? e?.message ?? '';
+      render(); toast('That did not go through. Nothing was replaced.');
+    }
   },
   async install() {
     const evt = ui.install;
@@ -1186,3 +1352,18 @@ if ('serviceWorker' in navigator && location.protocol === 'https:' || location.h
 
 if (S) navigator.storage?.persist?.().catch(() => {});
 render();
+
+// The online save connects after the table is up, so a slow or missing network never delays a hand.
+connect(FIREBASE).then((cloud) => {
+  if (!cloud) return;
+  sync.cloud = cloud;
+  cloud.onUser((user) => {
+    sync.user = user;
+    sync.status = user ? 'busy' : 'off';
+    if (ui.screen === 'settings' || ui.screen === 'setup') render();
+    if (user) runSync();
+  });
+  if (ui.screen === 'settings' || ui.screen === 'setup') render();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') queueSync(0); });
+  window.addEventListener('online', () => queueSync(0));
+}).catch(() => { /* no online save this time: the device copy carries on */ });

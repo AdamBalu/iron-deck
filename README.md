@@ -43,3 +43,37 @@ npm test
 - `js/art.js`, `js/art-bosses.js`: weapons, armour, the hero and the bosses, drawn in SVG.
 - `js/app.js`: the screens.
 - `sw.js`: offline support.
+- `js/picto.js`: the exercise drawings.
+- `js/sound.js`, `sounds/`: recorded card and combat sounds.
+- `js/sync.js`, `js/cloud.js`, `js/config.js`: one save across devices (rules, network, project settings).
+
+## Sign-in (optional)
+
+Without a Firebase project in `js/config.js` the app has no sign-in and keeps everything on the device.
+To turn it on:
+
+1. Create a project at console.firebase.google.com.
+2. Authentication: enable the Google sign-in method, and add the site's domain under Settings, Authorized domains.
+3. Firestore Database: create it in production mode and publish these rules:
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /saves/{uid} {
+         allow read, write: if request.auth != null && request.auth.uid == uid;
+         match /data/{part} {
+           allow read, write: if request.auth != null && request.auth.uid == uid;
+         }
+       }
+     }
+   }
+   ```
+
+4. Project settings: add a web app and paste its config into `js/config.js`.
+
+To try the sign-in screens without a project, run the app locally and open it with `?fakecloud` in the address.
+
+## Credits
+
+Sounds: Casino Audio, RPG Audio and Impact Sounds by Kenney (kenney.nl), public domain (CC0).

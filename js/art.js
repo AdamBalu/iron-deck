@@ -289,15 +289,25 @@ const FRAME = {
 };
 
 // ---------- the hero ----------
-const SKIN = '#E3B98F', SKIN_LO = '#C99A70', TUNIC = '#4B4699', TUNIC_HI = '#6D63D9', TROUSERS = '#2F2B66', HAIR = '#231F47';
+const SKIN = '#E3B98F', SKIN_LO = '#C99A70', TUNIC = '#423E90', TUNIC_HI = '#6D63D9', TROUSERS = '#2B275C', HAIR = '#231F47', WRAP = '#D2C7B2';
 
 // Arms are two bones each, placed by where the hand needs to be, so the hero can take a stance.
 const UPPER = 38, FORE = 31, SHOULDER = { l: [65, 86], r: [135, 86] };
+const REST_L = [49, 153], REST_R = [151, 153];
+// One stance per kind of weapon. l / r: where the hands go (l is the hero's right hand, on our left).
+// grip: where the weapon's own grip point sits, tilt: how far it leans, slide: how far it is pushed
+// through the hand, across: held across the body, so it passes behind the head and arms.
+const carry = (tilt, slide = 0) => ({ l: [50, 147], r: REST_R, grip: [50, 147], tilt, slide });
 const STANCE = {
-  // weapon upright in the hero's right hand (on our left), other arm at rest
-  one: { l: [48, 152], r: [152, 153], grip: [46, 150], tilt: 0 },
-  // both hands on a long grip, blade angled up past the shoulder
-  two: { l: [78, 148.4], r: [88.5, 130.2], grip: [84, 138], tilt: 30 },
+  none: { l: REST_L, r: REST_R },
+  // carried at his side in one hand, leaning away from the body, the other fist at rest
+  sword: carry(-11), axe: carry(-10, -16), mace: carry(-10, -16),
+  // planted on the ground beside him
+  halberd: { l: [42, 134], r: REST_R, grip: [42, 134], tilt: -2, slide: 72 },
+  // both hands on the haft in front of the chest, head up past his right shoulder
+  hammer: { l: [101.2, 120.8], r: [110.4, 146.2], grip: [106, 134], tilt: -20, across: true },
+  // both hands on a long grip, blade angled up past his left shoulder
+  zweihander: { l: [78, 148.4], r: [88.5, 130.2], grip: [84, 138], tilt: 30, across: true },
 };
 // Where the elbow sits for a hand at `hand`. side: -1 bends toward our left, +1 toward our right.
 function elbow(shoulder, hand, side) {
@@ -319,36 +329,65 @@ export function heroSvg(equip = {}, { size = 260 } = {}) {
   const gear = (item, art) => `<g class="gear r${item.rarity}">${art}</g>`;
   const piece = (slot) => { const item = it(slot); return item ? gear(item, ARMOR[slot](item.rarity, PAL[item.rarity])) : ''; };
   const weapon = it('weapon');
-  const stance = STANCE[weapon?.line === 'zweihander' ? 'two' : 'one'];
+  const stance = STANCE[weapon?.line ?? 'none'] ?? STANCE.none;
   const bracer = it('arms'), glove = it('hands');
-  // One whole arm: sleeve, forearm, bracer, then the hand and gauntlet in a separate layer on top.
+  // One whole arm: short sleeve, bare upper arm, forearm with a wrist wrap or a bracer,
+  // then the fist and gauntlet in a separate layer on top.
   const arm = (side) => {
     const s = SHOULDER[side], h = stance[side], dir = side === 'l' ? -1 : 1, e = elbow(s, h, dir);
     const len = Math.hypot(h[0] - e[0], h[1] - e[1]), turn = f(Math.atan2(h[1] - e[1], h[0] - e[0]) * 180 / Math.PI - 90);
     const flip = side === 'l' ? 1 : -1, skin = side === 'l' ? SKIN : SKIN_LO;
+    const cuff = [s[0] + (e[0] - s[0]) * 0.4, s[1] + (e[1] - s[1]) * 0.4];
+    const wrap = R(-5.9, 17.5, 11.8, 9.5, WRAP, 1.5) + R(-5.9, 20.4, 11.8, 1.2, '#000', 0, ' opacity=".16"') + R(-5.9, 23.6, 11.8, 1.2, '#000', 0, ' opacity=".16"');
     return {
-      limb: quad(s, e, 7, 6.6, TUNIC) + C(e[0], e[1], 6.6, TUNIC) +
-        `<g transform="translate(${f(e[0])} ${f(e[1])}) rotate(${turn}) scale(${flip} ${f(len / 28)})">${P('M-6.2 0H6.2L5.4 28H-5.4Z', skin)}${bracer ? gear(bracer, ARMOR.arms(bracer.rarity, PAL[bracer.rarity])) : ''}</g>`,
-      hand: `<g transform="translate(${f(h[0])} ${f(h[1])}) rotate(${turn}) scale(${flip} 1)">${C(0, 0, 7, skin)}${glove ? gear(glove, ARMOR.hands(glove.rarity, PAL[glove.rarity])) : ''}</g>`,
+      limb: quad(s, e, 7.6, 6.9, skin) + C(e[0], e[1], 6.9, skin) + quad(s, cuff, 8.4, 8.2, TUNIC) +
+        `<g transform="translate(${f(e[0])} ${f(e[1])}) rotate(${turn}) scale(${flip} ${f(len / 28)})">${P('M-6.6 0H6.6L5.4 28H-5.4Z', skin)}${bracer ? gear(bracer, ARMOR.arms(bracer.rarity, PAL[bracer.rarity])) : wrap}</g>`,
+      hand: `<g transform="translate(${f(h[0])} ${f(h[1])}) rotate(${turn}) scale(${flip} 1)">${C(0, 0, 7.4, skin)}${R(-4.8, 1.2, 9.6, 1.5, '#000', 0.7, ' opacity=".16"')}${glove ? gear(glove, ARMOR.hands(glove.rarity, PAL[glove.rarity])) : ''}</g>`,
     };
   };
   const left = arm('l'), right = arm('r');
-  const held = weapon ? `<g class="gear weapon r${weapon.rarity}" transform="translate(${stance.grip[0]} ${stance.grip[1]}) rotate(${stance.tilt})">${weaponArt(weapon.line, weapon.rarity)}</g>` : '';
+  const held = weapon ? `<g class="gear weapon r${weapon.rarity}" transform="translate(${stance.grip[0]} ${stance.grip[1]}) rotate(${stance.tilt})${stance.slide ? ` translate(0 ${stance.slide})` : ''}">${weaponArt(weapon.line, weapon.rarity)}</g>` : '';
   const body =
-    P('M77 152H99L97 234H80Z', TROUSERS) + P('M101 152H123L120 234H103Z', TROUSERS) + P('M77 152H88L88 234H80Z', '#fff', ' opacity=".1"') +
-    P('M78 230H98V250H70L72 242Z', HAIR) + P('M102 230H122L128 242L130 250H102Z', HAIR);
+    P('M77 152H99L97.5 236H80Z', TROUSERS) + P('M101 152H123L120 236H102.5Z', TROUSERS) +
+    P('M77 152H88L88.6 236H80Z', '#fff', ' opacity=".1"') + P('M112 152H123L120 236H111.6Z', '#000', ' opacity=".16"') +
+    P('M78.6 190H98.3L98 201H79.2Z', '#000', ' opacity=".16"') + P('M101.8 190H121.6L121 201H102Z', '#000', ' opacity=".16"') +
+    // worn leather boots with a turned cuff
+    P('M78.6 212H97.8V250H68L71 240L79 234Z', LEATHER) + P('M78.6 212H88V250H68L71 240L79 234Z', WOOD_HI, ' opacity=".3"') +
+    P('M102.2 212H121.4L121 234L129 240L132 250H102.2Z', LEATHER) +
+    R(77, 208, 22.4, 6.5, '#5E4630', 2) + R(100.6, 208, 22.4, 6.5, '#5E4630', 2) + R(66, 247, 33, 4, INK, 2) + R(101, 247, 33, 4, INK, 2);
   const torso =
-    C(68, 87, 10, TUNIC) + C(132, 87, 10, TUNIC) + P('M70 80H130L124 150H76Z', TUNIC) + P('M70 80H100V150H76Z', TUNIC_HI, ' opacity=".35"') +
-    R(76, 144, 48, 9, '#2A2550', 2);
+    // neck and chest, seen through the open collar
+    P('M91 58H109L110 76L100 92L90 76Z', SKIN_LO) +
+    C(68, 87, 10, TUNIC) + C(132, 87, 10, TUNIC) +
+    // a tunic that is broad at the shoulder and narrow at the waist, with a skirt below the belt
+    P('M68 80C76 77 86 75 91 74L100 90L109 74C114 75 124 77 132 80L125 150H75Z', TUNIC) +
+    P('M68 80C76 77 86 75 91 74L100 90V150H75Z', TUNIC_HI, ' opacity=".32"') +
+    P('M77 104C86 110 94 110 100 106C106 110 114 110 123 104L122.4 110C114 115.5 106 115.5 100 111.5C94 115.5 86 115.5 77.6 110Z', '#000', ' opacity=".14"') +
+    R(96.4, 80.4, 7.2, 1.3, INK, 0.6) + R(97.7, 84.6, 4.6, 1.3, INK, 0.6) +
+    P('M76 152H124L121.5 168L111 163L100 169L89 163L78.5 168Z', TUNIC) + P('M76 152H100V169L89 163L78.5 168Z', TUNIC_HI, ' opacity=".28"') +
+    // a strap over one shoulder and a plain belt
+    P('M112 75L121 77.4L86 150H77Z', LEATHER) + P('M112 75L116 76L81 150H77Z', WOOD_HI, ' opacity=".4"') + C(101.4, 107.4, 3.8, '#A7ABBB') + C(101.4, 107.4, 1.7, LEATHER) +
+    R(75, 143, 50, 10, LEATHER, 2) + R(75, 143, 50, 3.2, '#fff', 2, ' opacity=".1"') + R(94, 141.5, 12, 13, '#A7ABBB', 2) + R(97, 144.5, 6, 7, LEATHER, 1);
   const head =
-    R(94, 62, 12, 12, SKIN_LO, 2) + `<ellipse cx="100" cy="50" rx="15" ry="17" fill="${SKIN}"/>` + P('M100 33a15 17 0 0 1 0 34Z', SKIN_LO, ' opacity=".5"') +
-    P('M84 50C82 26 118 26 116 50C112 38 88 38 84 50Z', HAIR) + R(93, 50, 3.4, 4.4, INK, 1) + R(103.6, 50, 3.4, 4.4, INK, 1);
+    C(85.4, 53, 2.8, SKIN_LO) + C(114.6, 53, 2.8, SKIN_LO) +
+    // a square jaw, the far side in shadow, stubble along the chin
+    P('M85.5 46C85.5 30 114.5 30 114.5 46L113.6 57L106.5 67.5H93.5L86.4 57Z', SKIN) +
+    P('M100 34C108 34 114.5 37 114.5 46L113.6 57L106.5 67.5H100Z', SKIN_LO, ' opacity=".5"') +
+    P('M86.4 57L93.5 67.5H106.5L113.6 57L110 63.5L104.5 65.5H95.5L90 63.5Z', HAIR, ' opacity=".3"') +
+    // cropped hair swept to one side
+    P('M84.6 51C82 25 118 25 115.4 51L113.4 43C108 37.5 101 41 96.5 37.5C92 39.5 88 41 86.6 43Z', HAIR) +
+    P('M88 40C90 32 98 29 104 30C98 31.5 93 35 90.5 41Z', '#fff', ' opacity=".13"') +
+    // low brows over narrowed eyes, a scar through one of them
+    P('M88.6 50.6L98.2 53V55.2L88.6 53.2Z', HAIR) + P('M111.4 50.6L101.8 53V55.2L111.4 53.2Z', HAIR) +
+    R(91, 55.5, 5.4, 2.4, INK, 1) + R(103.6, 55.5, 5.4, 2.4, INK, 1) +
+    P('M106.6 47.5L108 47L109.6 60.4L108.4 60.8Z', '#F6DFC6', ' opacity=".8"') +
+    P('M100 55L102.6 61.4L100 62.2Z', SKIN_LO) + R(96, 63.5, 8, 1.4, '#8A5A44', 0.7);
   return `<svg class="hero" viewBox="0 -56 200 330" width="${size}" height="${Math.round(size * 1.65)}" role="img" aria-label="Your hero">
     <ellipse cx="100" cy="258" rx="62" ry="9" fill="#000" opacity=".28"/>
     ${piece('cloak')}
     <g class="bob">
       ${body}${piece('boots')}${torso}${piece('belt')}${piece('chest')}
-      ${stance.tilt ? held + head + piece('helm') + left.limb + right.limb : left.limb + right.limb + head + piece('helm') + held}
+      ${stance.across ? held + head + piece('helm') + left.limb + right.limb : left.limb + right.limb + head + piece('helm') + held}
       ${left.hand}${right.hand}
     </g>
   </svg>`;
