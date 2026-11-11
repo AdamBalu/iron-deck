@@ -333,6 +333,32 @@ export function furyGain(state, { crit, combos, onTarget }) {
   return 18 + (onTarget ? 12 : 0) + (crit ? 25 : 0) + 8 * combos + 2 * (weapon ? weapon.rarity + 1 : 0);
 }
 
+// The feed for the big-screen game: where the fight stands, and the blow that was just struck.
+// last: { res, was } from the set just logged (res from logSet, was the boss as it stood before), or null
+// to say only where things stand. Each blow gets the next number, so a reader can tell new from seen.
+export function fightFeed(state, last = null, now = 0) {
+  if (last) state.feedSeq = (state.feedSeq ?? 0) + 1;
+  const seq = state.feedSeq ?? 0, info = foeInfo(state.foe.k), weapon = equipped(state, 'weapon');
+  const b = state.battle ?? { fury: 0, edge: 0 };
+  const blow = last && {
+    seq, dmg: last.res.dmg, crit: !!last.res.record, weak: !!last.res.weak, bane: !!last.res.bane,
+    ult: !!last.res.fight?.ult, edge: last.res.fight?.edge ?? 0, blocked: last.res.fight?.blocked ?? null,
+    enragedNow: !!last.res.fight?.enragedNow, down: !!last.res.foeDown,
+    legend: !!last.res.foeDown?.legend, mythic: !!last.res.foeDown?.mythic,
+    boss: { k: last.was.k, name: foeInfo(last.was.k).name, big: foeInfo(last.was.k).big, hpFrom: last.was.hp, hpTo: Math.max(0, last.was.hp - last.res.dmg), max: last.was.max },
+  };
+  return {
+    v: 1, seq, at: now,
+    boss: { k: state.foe.k, name: info.name, big: info.big, hp: Math.max(0, state.foe.hp), max: state.foe.max, enraged: enraged(state.foe) },
+    hero: {
+      weapon: weapon ? { id: weapon.id, line: weapon.line, rarity: weapon.rarity, name: weapon.name } : null,
+      armour: Object.fromEntries(ARMOUR_SLOTS.map(slot => [slot, equipped(state, slot)?.rarity ?? -1])),
+    },
+    fight: { fury: b.fury, edge: b.edge, guard: Math.round(guard(state) * 100) },
+    last: blow || null,
+  };
+}
+
 // What the fight so far does to the blow about to land.
 function arenaBlow(state) {
   if (!arenaOn(state)) return null;

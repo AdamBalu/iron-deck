@@ -9,6 +9,9 @@
 //     allow read, write: if request.auth != null && request.auth.uid == uid;
 //     match /data/{part} { allow read, write: if request.auth != null && request.auth.uid == uid; }
 //   }
+// The big-screen game follows a fight through one more document, feeds/{code}. The code is long and random
+// and is the only key: whoever has it can read that feed, nobody can list feeds, and only signed-in players write.
+//   match /feeds/{code} { allow get: if true; allow write: if request.auth != null; }
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 const LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -36,6 +39,7 @@ export async function connect(config) {
     async readSave(uid) { const snap = await store.getDoc(state(uid)); return snap.exists() ? snap.data().json : null; },
     // The save goes first and its facts second, so the facts never describe a save that is not there yet.
     async write(uid, facts, json) { await store.setDoc(state(uid), { json }); await store.setDoc(meta(uid), facts); },
+    writeFeed: (code, feed) => store.setDoc(store.doc(db, 'feeds', code), { seq: feed.seq, json: JSON.stringify(feed) }),
   };
 }
 
@@ -52,5 +56,6 @@ function pretend() {
     async readMeta() { return get('meta'); },
     async readSave() { return get('json'); },
     async write(uid, facts, json) { set('json', json); set('meta', facts); },
+    async writeFeed(code, feed) { set('feed', { code, seq: feed.seq, json: JSON.stringify(feed) }); },
   };
 }

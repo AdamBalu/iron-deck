@@ -1002,3 +1002,5 @@ body.quake #app, body.quake #reveal { animation: quake .6s linear; }
   .ar-banner { top: 21%; }
   #arena { --hw: 33vw; --bw: 44vw; }
 }
+
+.code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; user-select: all; word-break: break-all; color: var(--paper); }

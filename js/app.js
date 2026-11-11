@@ -110,6 +110,14 @@ async function runSync() {
   if (ui.screen === 'settings' || ui.screen === 'setup') render();
   if (sync.again) { sync.again = false; queueSync(); }
 }
+// The big-screen game: after every set, and whenever asked, say where the fight stands.
+// It only runs for a signed-in player who switched it on, and a failure never interrupts the workout.
+function sendFeed(last = null) {
+  if (!S?.settings.bigScreen || !S.feedCode || !sync.user || !sync.cloud?.writeFeed) return;
+  const feed = E.fightFeed(S, last, now());
+  if (last) save(true);
+  sync.cloud.writeFeed(S.feedCode, feed).catch(() => { /* the next set sends it again */ });
+}
 const syncText = () => ({
   off: '', busy: 'Checking your online save.',
   ok: 'Your progress is saved online.',
@@ -793,6 +801,11 @@ function settingsScreen() {
           ? '<button data-act="sync-now">Sync now</button><button data-act="sign-out">Sign out</button>'
           : '<button data-act="sign-in">Sign in with Google</button>'}</div>
       </div>
+      ${sync.user ? `<div class="field col"><div><b>Big screen</b><small>${s.bigScreen
+        ? `The PC game follows your fight with this code: <code class="code">${S.feedCode}</code>`
+        : 'Lets the Iron Deck Arena game on your PC play each blow as you log it.'}</small></div>
+        <div class="seg">${[[true, 'On'], [false, 'Off']].map(([v, text]) => `<button data-act="set" data-key="bigScreen" data-val="${v}" class="${!!s.bigScreen === v ? 'on' : ''}">${text}</button>`).join('')}</div>
+      </div>` : ''}
     </section>`}
     <section class="panel">
       <div class="field col"><div><b>Look</b><small>New looks arrive with seasons and reward cards</small></div><div class="swatches">${looks}</div></div>
@@ -1254,6 +1267,7 @@ const actions = {
     const res = E.logSet(S, hand(), ui.reps, now(), rng);
     if (res.drop) ui.dropQueue.push(res.drop.id);
     save();
+    sendFeed({ res, was });
     const next = () => {
       if (hand()?.done) return finishNow();
       if (st.rest > 0) return startRest(st);
@@ -1327,6 +1341,11 @@ const actions = {
     S.pending = null;
     save(); render();
     if (key === 'sound' && val === 'true') sfx('place');
+    if (key === 'bigScreen' && val === 'true') {
+      // The code is made once and travels with the save, so every device feeds the same screen.
+      S.feedCode ??= [...crypto.getRandomValues(new Uint8Array(16))].map(n => n.toString(16).padStart(2, '0')).join('');
+      save(); render(); sendFeed();
+    }
     // Fury and stagger belong to the arena: leaving it clears them, so nothing lingers unseen.
     if (key === 'arena' && val !== 'true') delete S.battle, save();
   },
