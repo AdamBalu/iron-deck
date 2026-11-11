@@ -432,6 +432,25 @@ export function strengthGain(state) {
   return { overall: all.length ? mean(all) : null, suits };
 }
 
+// The last few weeks as a grid of days, Monday first: how many hands were played on each.
+// There is no streak in it to lose. A day played stays lit, and a gap is only an unlit square.
+//   grid[week][day], oldest week first; today: the index of today, counting days from the first square
+export function calendar(state, now, weeks = 12) {
+  const midnight = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d; };
+  const start = midnight(now);
+  const today = (weeks - 1) * 7 + (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - today);
+  const grid = Array.from({ length: weeks }, () => Array(7).fill(0));
+  let hands = 0;
+  for (const h of state.history ?? []) {
+    const i = Math.round((midnight(h.at) - start) / DAY); // rounded, so a clock change cannot shift a day
+    if (i < 0 || i > today) continue;
+    grid[Math.floor(i / 7)][i % 7]++;
+    hands++;
+  }
+  return { grid, hands, today, activeWeeks: grid.filter(w => w.some(Boolean)).length };
+}
+
 export function multiplier(state, now) {
   if (!state.lastHandAt) return 1;
   const days = (now - state.lastHandAt) / DAY;

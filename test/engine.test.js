@@ -887,3 +887,29 @@ test('the perfect kill drops a mythic: a season boss, finished with a record, wi
   assert.equal(noRecord.hit.foeDown.mythic, false);
   assert.ok(noRecord.rarity <= 4);
 });
+
+// ----- the calendar on the progress screen -----
+import { calendar } from '../js/engine.js';
+
+test('the calendar lights the days a hand was played, Monday first, and never looks ahead', () => {
+  const at = (y, m, d, h = 18) => new Date(y, m, d, h).getTime(); // local time, as the app sees it
+  const now = at(2026, 10, 11); // a Wednesday
+  const s = setup();
+  s.history = [
+    { at: at(2026, 10, 11, 7) },      // today
+    { at: at(2026, 10, 10, 23) },     // late last night still counts for Tuesday
+    { at: at(2026, 10, 10, 6) },      // and so does that morning
+    { at: at(2026, 9, 21) },          // a Wednesday three weeks back
+    { at: at(2026, 7, 1) },           // too long ago to show
+  ];
+  const c = calendar(s, now);
+  assert.equal(c.grid.length, 12);
+  assert.equal(c.today, 11 * 7 + 2);
+  assert.equal(c.grid[11][2], 1);
+  assert.equal(c.grid[11][1], 2);
+  assert.equal(c.grid[8][2], 1);
+  assert.equal(c.hands, 4);
+  assert.equal(c.activeWeeks, 2);
+  assert.deepEqual(c.grid[11].slice(3), [0, 0, 0, 0]);
+  assert.equal(calendar(setup(), now).hands, 0);
+});

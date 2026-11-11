@@ -686,6 +686,7 @@ function progressScreen() {
   const season = E.seasonInfo(S);
   const thing = E.heavyThing(S.tonnage);
   const gain = E.strengthGain(S);
+  const cal = E.calendar(S, now());
   const suits = SUIT_ORDER.map((s) => {
     const l = E.suitLevelFor(S.suitXp[s]);
     return `<div>${suitIcon(s)}<span>${suitName(s)}</span><span class="bar"><i style="width:${Math.round(l.into / l.span * 100)}%;background:${SUITS[s].color}"></i></span><span class="pct">${gain.suits[s] ? `+${gain.suits[s]}%` : ''}</span><span class="num">${l.level}</span></div>`;
@@ -724,6 +725,14 @@ function progressScreen() {
       <p class="trio"><span><b>${S.hands}</b> hands played</span><span><b>${S.records}</b> records</span><span><b>${S.foesDown}</b> bosses beaten</span></p>
     </section>
     <section class="suits">${suits}</section>
+    <section class="panel dark">
+      <h3>Your last 12 weeks</h3>
+      <div class="cal" role="img" aria-label="${cal.hands} ${cal.hands === 1 ? 'hand' : 'hands'} played in the last 12 weeks">${cal.grid.flat().map((n, i) =>
+        `<i class="${i > cal.today ? 'later' : n > 1 ? 'on twice' : n ? 'on' : ''}${i === cal.today ? ' today' : ''}"></i>`).join('')}</div>
+      <p class="empty">${cal.hands
+        ? `${cal.hands} ${cal.hands === 1 ? 'hand' : 'hands'} across ${cal.activeWeeks} of 12 weeks. Every square you light stays lit.`
+        : 'Each square is a day. Play a hand and today lights up, and it stays lit.'}</p>
+    </section>
     <section class="panel dark">
       <h3>Getting stronger</h3>
       ${gains.length ? `<ul class="gains">${gains.map(g => g.text).join('')}</ul>` : '<p class="empty">Play a card twice and your gains show up here, first number to best number.</p>'}

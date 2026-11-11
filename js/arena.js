@@ -72,7 +72,7 @@ function sparks(canvas) {
 }
 
 const backdrop = `<svg class="ar-far" viewBox="0 0 400 200" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-  <circle cx="300" cy="46" r="26" fill="#fff" opacity=".1"/><circle cx="300" cy="46" r="15" fill="#fff" opacity=".12"/>
+  <circle cx="244" cy="46" r="26" fill="#fff" opacity=".1"/><circle cx="244" cy="46" r="15" fill="#fff" opacity=".12"/>
   <path d="M0 200V132L38 96L70 126L112 72L150 118L186 88L232 128L270 84L318 124L356 92L400 130V200Z" fill="#000" opacity=".22"/>
   <path d="M0 200V158L46 132L92 156L140 124L196 158L244 136L300 160L352 134L400 156V200Z" fill="#000" opacity=".3"/>
   <path d="M34 200V96H28V88H56V96H50V200ZM350 200V84H344V76H372V84H366V200Z" fill="#000" opacity=".34"/>
@@ -129,8 +129,14 @@ export function playArena(spec) {
     const n = document.createElement('b');
     n.className = `ar-num ${cls}`;
     n.innerHTML = `${text}${tag ? `<small>${tag}</small>` : ''}`;
-    n.style.left = `${40 + Math.random() * 20}%`;
+    const pct = 40 + Math.random() * 20;
+    n.style.left = `${pct}%`;
     nums.append(n);
+    // a long number or a long line of tags must not run off either side of a narrow screen
+    const centre = foe.offsetLeft + $('.ar-stage').offsetLeft + nums.offsetWidth * pct / 100, half = n.offsetWidth / 2, edge = 8;
+    let shift = Math.min(0, el.clientWidth - edge - (centre + half));
+    if (centre - half + shift < edge) shift = edge - (centre - half);
+    if (shift) n.style.left = `calc(${pct}% + ${shift}px)`;
   };
   const shake = (px, ms = 380) => el.animate([{ transform: 'none' }, { transform: `translate(${-px}px, ${px * 0.6}px)` }, { transform: `translate(${px * 0.8}px, ${-px * 0.7}px)` }, { transform: `translate(${-px * 0.5}px, ${-px * 0.3}px)` }, { transform: 'none' }], { duration: ms });
   const flash = (color, ms = 260, peak = 0.55) => $('.ar-flash').animate([{ opacity: 0, background: color }, { opacity: peak, background: color, offset: 0.15 }, { opacity: 0, background: color }], { duration: ms });
@@ -158,7 +164,7 @@ export function playArena(spec) {
     if (fight.ult) { fx.ring(x, y, spec.color, art.offsetWidth * 1.3, 0.7, 20); fx.ring(x, y, '#fff', art.offsetWidth * 0.9, 0.5, 10); }
     art.animate([{ transform: 'none', filter: 'none' }, { transform: 'translateX(9%) rotate(7deg) scale(.93)', filter: 'brightness(3.6) saturate(0)', offset: 0.12 }, { transform: 'translateX(-4%) rotate(-3deg)', filter: 'brightness(1.5)', offset: 0.4 }, { transform: 'none', filter: 'none' }], { duration: fight.ult ? 620 : 420 });
     const tags = [fight.ult ? 'Ultimate' : spec.crit ? 'Critical' : '', fight.edge > 0 ? 'Riposte' : fight.edge < 0 ? 'Staggered' : '', ...spec.notes].filter(Boolean);
-    number(`−${spec.dmg.toLocaleString('en-US')}`, big ? 'big' : '', tags.join(' · '));
+    number(`−${spec.dmg.toLocaleString('en-US')}`, big ? 'big' : '', tags.join('&nbsp;· '));
     $('.ar-bar.hp i').style.width = `${spec.hp.to}%`;
     shake(fight.ult ? 16 : big ? 10 : 5, fight.ult ? 520 : 360);
     if (big) flash('#fff', fight.ult ? 420 : 260, fight.ult ? 0.8 : 0.5);
