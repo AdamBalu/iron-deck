@@ -1,7 +1,7 @@
 // Offline support. Online: always fetch the newest files. Offline or slow: serve the last saved copy.
-const CACHE = 'iron-deck-v15';
+const CACHE = 'iron-deck-v16';
 const SOUNDS = [
-  'slide1', 'slide2', 'slide3', 'slide4', 'place1', 'place2', 'fan', 'shuffle', 'pack', 'takeout',
+  'slide1', 'slide2', 'slide3', 'slide4', 'place1', 'place2', 'fan', 'pack', 'takeout',
   'slice1', 'slice2', 'chop', 'punch1', 'punch2', 'plate', 'clang1', 'clang2', 'body',
   'bell', 'bell2', 'ding', 'coins', 'coins2', 'draw', 'cloth', 'anvil1', 'anvil2', 'tick', 'tap',
 ];

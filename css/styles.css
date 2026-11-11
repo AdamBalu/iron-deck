@@ -256,7 +256,7 @@ p.ghost.off { text-decoration: none; color: var(--muted); font-size: 14px; }
 .block.boss .mini em { color: var(--muted); }
 .block.boss .mini .tgt { color: var(--gold); }
 .warm { color: var(--muted); font-size: 14px; margin-top: 18px; }
-.s-deal.enter .mini { animation: deal .46s var(--spring) both; animation-delay: calc(var(--i, 0) * 65ms + 80ms); }
+.s-deal.enter .mini { animation: deal .46s var(--spring) both; animation-delay: calc(var(--i, 0) * var(--gap, 80ms) + var(--lead, 80ms)); }
 @keyframes deal { from { opacity: 0; transform: translate(70px, -46px) rotate(9deg) scale(.96); } }
 .video { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; color: inherit; white-space: nowrap; }
 

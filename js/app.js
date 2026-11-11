@@ -417,6 +417,12 @@ function homeScreen() {
     ${ui.install ? '<button class="ghost small" data-act="install">Add Iron Deck to your home screen</button>' : ''}`;
 }
 
+// The deal: how long before the first card flies in, and the gap between cards, in milliseconds.
+// The deal screen hands these to the stylesheet and dealSound() uses the same numbers, so the two cannot drift apart.
+const DEAL_LEAD = 80, DEAL_GAP = 80;
+function dealSound() {
+  E.handCards(ui.hand).forEach((_, i) => sfx('card', { delay: (DEAL_LEAD + i * DEAL_GAP) / 1000 }));
+}
 const RESHUFFLES = 3; // enough to dodge a hand you dislike, not enough to stall on
 
 function blockLabel(b) {
@@ -465,7 +471,7 @@ function dealScreen() {
     <p class="sub">${h.mode === 'quick' ? 'Two cards and a finisher. In and out.' : style.how}${h.mult > 1 ? ` Points on this hand are ${h.mult === 2 ? 'doubled' : 'up 25%'}.` : ''}</p>
     ${h.bounty ? `<p class="bounty ${h.bounty.gold ? 'gold' : ''}"><b>${h.bounty.gold ? 'Golden bounty' : 'Bounty'}</b> ${bountyText(h.bounty)} for ${h.bounty.reward} extra points</p>` : ''}
     ${fight}
-    <div class="blocks">${blocks}</div>
+    <div class="blocks" style="--lead:${DEAL_LEAD}ms;--gap:${DEAL_GAP}ms">${blocks}</div>
     <p class="warm">Warm up first: ten easy push-ups and some arm circles.</p>
     <div class="dock">
       <button class="btn" data-act="start">Start</button>
@@ -934,7 +940,7 @@ function sheetView() {
       ? (isDb(ex) ? l.bests.map(b => `${kg(b.w)} kg × ${b.r}`).join(', ') : `${Math.max(...l.bests.map(b => b.r))} ${ex.kind === 'time' ? 'sec' : 'reps'}`)
       : null;
     return `<div class="scrim" data-act="close-sheet"></div><div class="sheet info cardsheet" role="dialog" aria-label="${ex.name}">
-      <p class="corner">${suitIcon(ex.suit, 18)}<span>${suitName(ex.suit)} card</span></p>
+      <p class="corner">${suitIcon(ex.suit, 18)}<span>${ex.suit === 'rest' ? 'Legs and shoulders' : `${suitName(ex.suit)} card`}</span></p>
       ${art(ex.id, 260, true)}
       <h2>${ex.name}</h2>
       <p>${ex.cue} ${videoLink(ex)}</p>
@@ -1223,7 +1229,7 @@ const actions = {
   'go-home'() { go('home'); },
   deal({ mode }) {
     ui.hand = mode === 'quick' ? E.dealHand(S, 'quick', rng, now()) : ensurePending();
-    sfx('deal');
+    dealSound();
     go('deal');
   },
   reshuffle() {
@@ -1233,7 +1239,7 @@ const actions = {
     ui.hand = E.dealHand(S, ui.hand.mode, rng, now(), seen);
     if (ui.hand.mode === 'full') S.pending = ui.hand;
     save();
-    sfx('deal'); ui.enter = true; render();
+    dealSound(); ui.enter = true; render();
   },
   start() {
     S.current = ui.hand; S.pending = null; save();

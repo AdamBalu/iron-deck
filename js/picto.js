@@ -1,15 +1,19 @@
-// Exercise pictograms: a side-view figure that performs the movement.
+// Exercise pictograms: a figure that performs the movement, seen from the side (or from the front, where
+// the side view would hide what the arms do).
 // A pose says where the hips, hand and foot are; elbows and knees are worked out from bone lengths,
 // so the figure keeps its proportions through the whole movement.
 import { EX, SUITS } from './data.js';
 
 const TORSO = 26, UPPER = 14, FORE = 13, THIGH = 17, SHIN = 17, HEAD = 6.3, NECK = 9.6, FLOOR = 78;
+const SHW = 9, HIPW = 3.6; // seen from the front: half the width of the shoulders and of the hips
 const r1 = (n) => Math.round(n * 10) / 10;
 const rad = (deg) => deg * Math.PI / 180;
 
 // h: hip, t: torso angle (0 = upright, 90 = leaning toward +x), w: hand, f: foot, f2: back foot.
 // eb / kb: which way the elbow / knee points: L, R, U or D. hot: what the exercise works (drawn in the suit colour).
 // b lists only what differs from a.
+// arc: the hand swings around the shoulder with the arm held long, instead of travelling in a straight line.
+// front: seen from the front. w and f are the hand and foot on one side; the other side mirrors them.
 export const POSES = {
   curl:     { hot: 'arm', eb: 'L', kb: 'R', a: { h: [56, 44], t: 0, w: [59, 45], f: [57, 78] }, b: { w: [64, 22] } },
   scurl:    { bench: 'seat', hot: 'arm', eb: 'L', kb: 'U', a: { h: [52, 56], t: 0, w: [55, 57], f: [72, 78] }, b: { w: [60, 34] } },
@@ -28,7 +32,8 @@ export const POSES = {
   pullover: { bench: 'flat', hot: 'arm', eb: 'U', kb: 'U', a: { h: [74, 56], t: 270, w: [23, 57], f: [92, 78] }, b: { w: [48, 29.5] } },
   kick:     { hot: 'arm', eb: 'L', kb: 'R', a: { h: [54, 46], t: 68, w: [72, 52], f: [54, 78] }, b: { w: [55, 37] } },
   row:      { hot: 'arm', eb: 'U', kb: 'R', a: { h: [54, 46], t: 68, w: [79, 62.5], f: [54, 78] }, b: { w: [70, 45] } },
-  raise:    { hot: 'arm', eb: 'D', kb: 'R', a: { h: [56, 44], t: 0, w: [59, 45], f: [57, 78] }, b: { w: [83, 19] } },
+  raise:    { hot: 'arm', arc: true, eb: 'D', kb: 'R', a: { h: [56, 44], t: 0, w: [59, 45], f: [57, 78] }, b: { w: [83, 19] } },
+  lraise:   { front: true, hot: 'arm', arc: true, eb: 'U', kb: 'R', a: { h: [60, 44], t: 0, w: [75.5, 45], f: [67, 78] }, b: { w: [95.3, 18.5] } },
   shrug:    { hot: 'arm', eb: 'L', kb: 'R', a: { h: [56, 44], t: 0, w: [58, 45.5], f: [57, 78] }, b: { h: [56, 42], w: [58, 42] } },
   calf:     { hot: 'leg', eb: 'L', kb: 'R', a: { h: [56, 45], t: 0, w: [58, 46.5], f: [57, 78] }, b: { h: [56, 41], w: [58, 42.5], f: [57, 75] } },
   squat:    { hot: 'leg', eb: 'D', kb: 'R', a: { h: [56, 44], t: 4, w: [64, 26], f: [60, 78] }, b: { h: [46, 60], t: 28, w: [65, 45] } },
@@ -54,15 +59,15 @@ const SHOWS = {
   'one-arm-overhead': 'ohext', 'diamond-push-up': 'pushup',
   crunch: 'crunch', 'leg-raise': 'legraise', plank: 'plank', 'russian-twist': 'twist', bicycle: 'crunch', 'reverse-crunch': 'crunch',
   'v-up': 'vup', 'dead-bug': 'crunch', 'mountain-climber': 'plank', 'weighted-crunch': 'crunch', 'hollow-hold': 'plank', 'side-plank': 'plank',
-  'goblet-squat': 'squat', 'shoulder-press': 'ohp', rdl: 'rdl', 'lateral-raise': 'raise', 'split-squat': 'lunge', 'hip-thrust': 'thrust',
+  'goblet-squat': 'squat', 'shoulder-press': 'ohp', rdl: 'rdl', 'lateral-raise': 'lraise', 'split-squat': 'lunge', 'hip-thrust': 'thrust',
   'reverse-lunge': 'lunge', 'calf-raise': 'calf', arnold: 'ohp', 'step-up': 'lunge', 'front-raise': 'raise',
 };
 
-// How the dumbbell sits in the hand, seen from the side.
+// How the dumbbell sits in the hand, as the drawing sees it.
 // end: pointing at you (palms forward or back), so you see its round end. level: lying flat, front to back.
 // upright: standing on end. cross: square to the forearm and turning with it (hammer grip).
 const GRIP_BY_POSE = {
-  curl: 'end', scurl: 'end', icurl: 'end', conc: 'end', press: 'end', ipress: 'end', fpress: 'end', ohp: 'end', raise: 'end',
+  curl: 'end', scurl: 'end', icurl: 'end', conc: 'end', press: 'end', ipress: 'end', fpress: 'end', ohp: 'end', raise: 'end', lraise: 'end',
   thrust: 'end', crunch: 'end', twist: 'end',
   fly: 'level', pushup: 'level', row: 'level', shrug: 'level', calf: 'level', lunge: 'level', rdl: 'level',
   ohext: 'upright', pullover: 'upright', squat: 'upright',
@@ -73,7 +78,7 @@ const PROPS = ['deep-push-up'];
 const GRIP = {
   hammer: 'cross', 'cross-body': 'cross', waiter: 'upright',
   'neutral-press': 'level', 'squeeze-press': 'level', 'close-press': 'level', 'incline-fly': 'level', tate: 'upright',
-  'bent-row': 'end', 'wide-row': 'end', 'lateral-raise': 'level',
+  'bent-row': 'end', 'wide-row': 'end',
 };
 
 // The middle joint of a two-bone limb reaching from `from` to `to`. There are always two places it could be,
@@ -100,9 +105,25 @@ function frame(pose, k) {
   const mix = (key) => [a[key][0] + (b[key][0] - a[key][0]) * k, a[key][1] + (b[key][1] - a[key][1]) * k];
   let turn = b.t - a.t;
   if (turn > 180) turn -= 360; else if (turn < -180) turn += 360;
-  const t = rad(a.t + turn * k), dir = [Math.sin(t), -Math.cos(t)];
-  const hip = mix('h'), sh = [hip[0] + dir[0] * TORSO, hip[1] + dir[1] * TORSO], head = [sh[0] + dir[0] * NECK, sh[1] + dir[1] * NECK];
-  return { hip, sh, head, w: mix('w'), f: mix('f'), f2: a.f2 ? mix('f2') : null };
+  // The trunk at one moment, and where the arm and the leg start from it: on the spine when seen from the side,
+  // out at the shoulder and the hip joint when seen from the front.
+  const trunk = (at) => {
+    const t = rad(a.t + turn * at), dir = [Math.sin(t), -Math.cos(t)];
+    const hip = [a.h[0] + (b.h[0] - a.h[0]) * at, a.h[1] + (b.h[1] - a.h[1]) * at];
+    const sh = [hip[0] + dir[0] * TORSO, hip[1] + dir[1] * TORSO], head = [sh[0] + dir[0] * NECK, sh[1] + dir[1] * NECK];
+    return { hip, sh, head, armFrom: pose.front ? [sh[0] + SHW, sh[1] + 1.5] : sh, legFrom: pose.front ? [hip[0] + HIPW, hip[1]] : hip };
+  };
+  const now = trunk(k);
+  let w = mix('w');
+  if (pose.arc) {
+    const polar = (p, o) => [Math.hypot(p[0] - o[0], p[1] - o[1]), Math.atan2(p[1] - o[1], p[0] - o[0])];
+    const [r0, a0] = polar(a.w, trunk(0).armFrom), [r9, a9] = polar(b.w, trunk(1).armFrom);
+    let sweep = a9 - a0;
+    if (sweep > Math.PI) sweep -= Math.PI * 2; else if (sweep < -Math.PI) sweep += Math.PI * 2;
+    const r = r0 + (r9 - r0) * k, ang = a0 + sweep * k;
+    w = [now.armFrom[0] + Math.cos(ang) * r, now.armFrom[1] + Math.sin(ang) * r];
+  }
+  return { ...now, w, f: mix('f'), f2: a.f2 ? mix('f2') : null };
 }
 
 // An elbow or knee only folds one way. A pose names the direction (eb, kb) as it looks when the limb is
@@ -115,19 +136,25 @@ function sides(pose) {
     return bend > best.bend ? { bend, side: sideFor(from, to, l1, l2, way) } : best;
   }, { bend: -1, side: 1 }).side;
   pose.sides = {
-    arm: most(fr => [fr.sh, fr.w, UPPER, FORE, pose.eb]),
-    leg: most(fr => [fr.hip, fr.f, THIGH, SHIN, pose.kb]),
-    leg2: pose.a.f2 ? most(fr => [fr.hip, fr.f2, THIGH, SHIN, pose.kb2 ?? pose.kb]) : 1,
+    arm: most(fr => [fr.armFrom, fr.w, UPPER, FORE, pose.eb]),
+    leg: most(fr => [fr.legFrom, fr.f, THIGH, SHIN, pose.kb]),
+    leg2: pose.a.f2 ? most(fr => [fr.legFrom, fr.f2, THIGH, SHIN, pose.kb2 ?? pose.kb]) : 1,
   };
   return pose.sides;
 }
 
-// Every joint for one moment of the movement.
+// Every joint for one moment of the movement. sh and hip are where the arm and the leg start; base and top
+// are the two ends of the spine (the same points in a side view). other: the mirrored half, in a front view.
 export function joints(pose, k) {
   const fr = frame(pose, k), s = sides(pose);
-  const arm = hinge(fr.sh, fr.w, UPPER, FORE, s.arm), leg = hinge(fr.hip, fr.f, THIGH, SHIN, s.leg);
-  const leg2 = fr.f2 ? hinge(fr.hip, fr.f2, THIGH, SHIN, s.leg2) : null;
-  return { hip: fr.hip, sh: fr.sh, head: fr.head, el: arm.mid, hand: arm.end, kn: leg.mid, foot: leg.end, kn2: leg2?.mid, foot2: leg2?.end };
+  const arm = hinge(fr.armFrom, fr.w, UPPER, FORE, s.arm), leg = hinge(fr.legFrom, fr.f, THIGH, SHIN, s.leg);
+  const leg2 = fr.f2 ? hinge(fr.legFrom, fr.f2, THIGH, SHIN, s.leg2) : null;
+  const j = { hip: fr.legFrom, sh: fr.armFrom, base: fr.hip, top: fr.sh, head: fr.head, el: arm.mid, hand: arm.end, kn: leg.mid, foot: leg.end, kn2: leg2?.mid, foot2: leg2?.end };
+  if (pose.front) {
+    const flip = (p) => [2 * fr.hip[0] - p[0], p[1]];
+    j.other = { hip: flip(j.hip), sh: flip(j.sh), el: flip(j.el), hand: flip(j.hand), kn: flip(j.kn), foot: flip(j.foot) };
+  }
+  return j;
 }
 
 const gripOf = (exId) => GRIP[exId] ?? GRIP_BY_POSE[SHOWS[exId]] ?? 'level';
@@ -143,9 +170,9 @@ export function reach(exId) {
   const add = (p, rx, ry = rx) => { box[0] = Math.min(box[0], p[0] - rx); box[1] = Math.min(box[1], p[1] - ry); box[2] = Math.max(box[2], p[0] + rx); box[3] = Math.max(box[3], p[1] + ry); };
   for (const k of STEPS) {
     const j = joints(pose, k);
-    for (const p of [j.hip, j.sh, j.el, j.hand, j.kn, j.foot, j.kn2, j.foot2]) if (p) add(p, 4.2);
+    for (const p of [j.hip, j.sh, j.el, j.hand, j.kn, j.foot, j.kn2, j.foot2, ...Object.values(j.other ?? {})]) if (p) add(p, 4.2);
     add(j.head, HEAD);
-    if (bx) add([j.hand[0], j.hand[1] + liftOf(exId)], bx, by);
+    for (const hand of [j.hand, j.other?.hand]) if (bx && hand) add([hand[0], hand[1] + liftOf(exId)], bx, by);
   }
   return box;
 }
@@ -196,21 +223,31 @@ export function picto(exId, { size = 120, animate = false } = {}) {
     const art = grip === 'end'
       ? `<circle r="5.7" ${steel}/><circle r="2.1" fill="#C3C8D6"/>`
       : `<rect x="-7.5" y="-1.6" width="15" height="3.2" rx="1.6" fill="#C3C8D6" stroke="currentColor" stroke-width=".8"/><rect x="-10" y="-5.4" width="5" height="10.8" rx="1.9" ${steel}/><rect x="5" y="-5.4" width="5" height="10.8" rx="1.9" ${steel}/>`;
-    // A hammer grip keeps the bar square to the forearm, so it turns as the arm does.
-    const square = (j) => r1(Math.atan2(j.hand[1] - j.el[1], j.hand[0] - j.el[0]) * 180 / Math.PI + 90);
-    const turn = grip === 'cross' ? `<g transform="rotate(${square(first)})">${tween('rotate', square)}${art}</g>`
-      : grip === 'upright' ? `<g transform="rotate(90)">${art}</g>` : art;
-    const at = (j) => `${r1(j.hand[0])} ${r1(j.hand[1] + lift)}`;
-    bell = `<g transform="translate(${at(first)})">${tween('translate', at)}${turn}</g>`;
+    // One dumbbell per arm drawn: side(j) is that arm's joints.
+    const inHand = (side) => {
+      // A hammer grip keeps the bar square to the forearm, so it turns as the arm does.
+      const square = (j) => r1(Math.atan2(side(j).hand[1] - side(j).el[1], side(j).hand[0] - side(j).el[0]) * 180 / Math.PI + 90);
+      const turn = grip === 'cross' ? `<g transform="rotate(${square(first)})">${tween('rotate', square)}${art}</g>`
+        : grip === 'upright' ? `<g transform="rotate(90)">${art}</g>` : art;
+      const at = (j) => `${r1(side(j).hand[0])} ${r1(side(j).hand[1] + lift)}`;
+      return `<g transform="translate(${at(first)})">${tween('translate', at)}${turn}</g>`;
+    };
+    bell = inHand(j => j) + (pose.front ? inHand(j => j.other) : '');
   }
+  const limb = pose.hot === 'arm' ? hot : 'currentColor', lower = pose.hot === 'leg' ? hot : 'currentColor';
+  // From the side the trunk is one thick line. From the front it is a shape, wide at the shoulders.
+  const chest = (j) => pts(j.other.sh, j.sh, j.hip, j.other.hip);
+  const trunk = pose.front
+    ? `<polygon points="${chest(first)}" fill="currentColor" stroke="currentColor" stroke-width="${w}" stroke-linejoin="round">${anim('points', chest)}</polygon>`
+    : line('body', j => pts(j.base, j.top), pose.hot === 'core' ? hot : 'currentColor').replace(`stroke-width="${w}"`, 'stroke-width="8.4"');
   return `<svg class="picto" viewBox="${frameFor(exId).join(' ')}" width="${size}" height="${Math.round(size * 0.75)}" role="img" aria-label="${ex.name}">
     <rect x="6" y="${FLOOR + 3.4}" width="108" height="1.6" rx=".8" fill="currentColor" opacity=".16"/>
     <g fill="currentColor" opacity=".3">${benchArt(pose.bench)}</g>
     ${frames[0].foot2 ? line('far', j => pts(j.hip, j.kn2, j.foot2), 'currentColor').replace('<polyline', '<polyline opacity=".45"') : ''}
-    ${line('leg', j => pts(j.hip, j.kn, j.foot), pose.hot === 'leg' ? hot : 'currentColor')}
-    ${line('body', j => pts(j.hip, j.sh), pose.hot === 'core' ? hot : 'currentColor').replace(`stroke-width="${w}"`, 'stroke-width="8.4"')}
+    ${line('leg', j => pts(j.hip, j.kn, j.foot), lower)}${pose.front ? line('leg', j => pts(j.other.hip, j.other.kn, j.other.foot), lower) : ''}
+    ${trunk}
     <circle cx="${r1(first.head[0])}" cy="${r1(first.head[1])}" r="${HEAD}" fill="currentColor">${anim('cx', j => r1(j.head[0]))}${anim('cy', j => r1(j.head[1]))}</circle>
-    ${line('arm', j => pts(j.sh, j.el, j.hand), pose.hot === 'arm' ? hot : 'currentColor')}
+    ${line('arm', j => pts(j.sh, j.el, j.hand), limb)}${pose.front ? line('arm', j => pts(j.other.sh, j.other.el, j.other.hand), limb) : ''}
     ${bell}
   </svg>`;
 }

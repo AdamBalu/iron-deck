@@ -2,7 +2,7 @@
 // plus a few quiet notes under the big moments. No DOM, no game state: app.js decides when to play.
 
 export const FILES = [
-  'slide1', 'slide2', 'slide3', 'slide4', 'place1', 'place2', 'fan', 'shuffle', 'pack', 'takeout',
+  'slide1', 'slide2', 'slide3', 'slide4', 'place1', 'place2', 'fan', 'pack', 'takeout',
   'slice1', 'slice2', 'chop', 'punch1', 'punch2', 'plate', 'clang1', 'clang2', 'body',
   'bell', 'bell2', 'ding', 'coins', 'coins2', 'draw', 'cloth', 'anvil1', 'anvil2', 'tick', 'tap',
 ];
@@ -27,7 +27,7 @@ export const RECIPES = {
   tap: [['tap', 0, 0.7]],
   flip: [['slide', 0, 0.9]],
   place: [['place', 0, 1]],
-  deal: [['shuffle', 0, 0.75, 1.15], ['place', 1.05, 0.9]],
+  card: [['slide', 0, 0.5, 0.42]], // one card of a deal: app.js plays one per card, as each lands
   start: [['slide', 0, 0.8], ['place', 0.16, 1]],
   'hit-blade': blade,
   'hit-blunt': blunt,
