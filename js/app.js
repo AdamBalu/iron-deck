@@ -562,7 +562,7 @@ function playScreen() {
     </header>
     ${foeStrip({ compact: true, exposed: !!nh?.weak })}${fightBar()}
     <article class="face ${c.boss ? 'bossface' : ''}">
-      <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Finisher' : `${suitName(ex.suit)} card`}</span>
+      <div class="corner">${suitIcon(ex.suit, 18)}<span>${c.boss ? 'Finisher' : ex.suit === 'rest' ? 'Legs and shoulders' : `${suitName(ex.suit)} card`}</span>
         <button class="how" data-act="toggle-cue">${ui.cue ? 'Hide tips' : 'How to do it'}</button></div>
       ${art(c.ex, 160, true)}
       <h2>${ex.name}</h2>
@@ -919,6 +919,8 @@ function sheetView() {
   if (ui.sheet?.card) {
     const ex = EX[ui.sheet.card];
     const l = S.lifts[ex.id];
+    // every form the card has been played in: plain, and with each twist
+    const plays = Object.entries(S.lifts).reduce((n, [key, lift]) => n + (key === ex.id || key.startsWith(`${ex.id}:`) ? lift.sessions ?? 0 : 0), 0);
     const best = l?.bests?.length
       ? (isDb(ex) ? l.bests.map(b => `${kg(b.w)} kg × ${b.r}`).join(', ') : `${Math.max(...l.bests.map(b => b.r))} ${ex.kind === 'time' ? 'sec' : 'reps'}`)
       : null;
@@ -928,7 +930,7 @@ function sheetView() {
       <h2>${ex.name}</h2>
       <p>${ex.cue} ${videoLink(ex)}</p>
       ${spark(l)}
-      <p class="muted">${l?.sessions ? `Played ${l.sessions} ${l.sessions === 1 ? 'time' : 'times'}. Best: ${best}.` : 'Not played yet. It is first in line for the next hand of this suit.'}</p>
+      <p class="muted">${plays ? `Played ${plays} ${plays === 1 ? 'time' : 'times'}${best ? `. Best: ${best}` : ''}.` : 'Not played yet. It is first in line for the next hand of this suit.'}</p>
       <button class="quiet" data-act="close-sheet">Close</button>
     </div>`;
   }
