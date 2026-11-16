@@ -14,6 +14,7 @@ const rad = (deg) => deg * Math.PI / 180;
 // b lists only what differs from a.
 // arc: the hand swings around the shoulder with the arm held long, instead of travelling in a straight line.
 // front: seen from the front. w and f are the hand and foot on one side; the other side mirrors them.
+// bar: where a pull-up bar is, seen end-on.
 export const POSES = {
   curl:     { hot: 'arm', eb: 'L', kb: 'R', a: { h: [56, 44], t: 0, w: [59, 45], f: [57, 78] }, b: { w: [64, 22] } },
   scurl:    { bench: 'seat', hot: 'arm', eb: 'L', kb: 'U', a: { h: [52, 56], t: 0, w: [55, 57], f: [72, 78] }, b: { w: [60, 34] } },
@@ -22,6 +23,8 @@ export const POSES = {
   press:    { bench: 'flat', hot: 'arm', eb: 'D', kb: 'U', a: { h: [74, 56], t: 270, w: [52, 43], f: [92, 78] }, b: { w: [48, 29.5] } },
   ipress:   { bench: 'incline', hot: 'arm', eb: 'D', kb: 'U', a: { h: [66, 58], t: 320, w: [57, 29], f: [86, 78] }, b: { w: [52, 11.5] } },
   fly:      { bench: 'flat', hot: 'arm', eb: 'D', kb: 'U', a: { h: [74, 56], t: 270, w: [63, 53], f: [92, 78] }, b: { w: [48, 29.5] } },
+  ffly:     { hot: 'arm', eb: 'U', kb: 'U', a: { h: [72, 74], t: 270, w: [60, 72], f: [94, 78] }, b: { w: [46, 47.5] } },
+  fskull:   { hot: 'arm', eb: 'U', kb: 'U', a: { h: [72, 74], t: 270, w: [33, 66], f: [94, 78] }, b: { w: [46, 47.5] } },
   fpress:   { hot: 'arm', eb: 'R', kb: 'U', a: { h: [72, 74], t: 270, w: [50, 61], f: [94, 78] }, b: { w: [46, 47.5] } },
   pushup:   { hot: 'arm', eb: 'R', kb: 'U', a: { h: [74, 60], t: 290, w: [50, 78], f: [103, 78] }, b: { h: [70.5, 68], t: 281 } },
   dpushup:  { bench: 'right', hot: 'arm', eb: 'R', kb: 'U', a: { h: [76, 56], t: 283, w: [51, 78], f: [108, 58] }, b: { h: [74, 64], t: 270 } },
@@ -40,6 +43,12 @@ export const POSES = {
   lunge:    { hot: 'leg', eb: 'L', kb: 'R', kb2: 'D', a: { h: [58, 45], t: 0, w: [59, 46], f: [74, 78], f2: [40, 78] }, b: { h: [58, 57], w: [59, 58], f2: [38, 78] } },
   rdl:      { hot: 'leg', eb: 'D', kb: 'R', a: { h: [56, 44], t: 0, w: [58, 45.5], f: [57, 78] }, b: { h: [50, 45], t: 78, w: [76, 65] } },
   thrust:   { bench: 'left', hot: 'leg', eb: 'U', kb: 'U', a: { h: [62, 70], t: 298, w: [62, 66], f: [84, 78] }, b: { h: [64, 58], t: 270, w: [64, 54] } },
+  bridge:   { hot: 'leg', eb: 'U', kb: 'U', a: { h: [62, 73], t: 270, w: [62, 68], f: [82, 78] }, b: { h: [61, 62], t: 247, w: [61, 57] } },
+  flegraise: { hot: 'leg', eb: 'U', kb: 'U', a: { h: [62, 74], t: 270, w: [58, 76], f: [96, 74] }, b: { f: [64, 40] } },
+  pullup:   { bar: [60, -12], hot: 'arm', eb: 'D', kb: 'R', a: { h: [60, 40.5], t: 0, w: [60, -12], f: [61, 74.3] }, b: { h: [55.5, 18], f: [56.5, 51.8] } },
+  hang:     { bar: [60, -12], hot: 'arm', eb: 'L', kb: 'R', a: { h: [60, 40.5], t: 0, w: [60, -12], f: [61, 74.3] }, b: { h: [60, 39.7], f: [61, 73.5] } },
+  kneeraise: { bar: [60, -12], hot: 'core', eb: 'L', kb: 'U', a: { h: [60, 40.5], t: 0, w: [60, -12], f: [61, 74.3] }, b: { f: [74, 50] } },
+  hlegraise: { bar: [60, -12], hot: 'core', eb: 'L', kb: 'U', a: { h: [60, 40.5], t: 0, w: [60, -12], f: [61, 74.3] }, b: { f: [93.5, 43] } },
   crunch:   { hot: 'core', eb: 'U', kb: 'U', a: { h: [66, 74], t: 270, w: [34, 70], f: [92, 78] }, b: { t: 300, w: [40, 55] } },
   legraise: { bench: 'flat', hot: 'leg', eb: 'U', kb: 'U', a: { h: [62, 56], t: 270, w: [28, 60], f: [96, 56] }, b: { f: [64, 22] } },
   plank:    { hot: 'core', eb: 'D', kb: 'U', a: { h: [76, 66], t: 275, w: [38, 77], f: [110, 78] }, b: { h: [76, 64.5] } },
@@ -61,24 +70,49 @@ const SHOWS = {
   'v-up': 'vup', 'dead-bug': 'crunch', 'mountain-climber': 'plank', 'weighted-crunch': 'crunch', 'hollow-hold': 'plank', 'side-plank': 'plank',
   'goblet-squat': 'squat', 'shoulder-press': 'ohp', rdl: 'rdl', 'lateral-raise': 'lraise', 'split-squat': 'lunge', 'hip-thrust': 'thrust',
   'reverse-lunge': 'lunge', 'calf-raise': 'calf', arnold: 'ohp', 'step-up': 'lunge', 'front-raise': 'raise',
+  // without a bench
+  'floor-fly': 'ffly', 'floor-squeeze-press': 'fpress', 'floor-neutral-press': 'fpress', 'wide-push-up': 'pushup', 'pause-push-up': 'pushup',
+  'floor-skull': 'fskull', 'floor-close-press': 'fpress', 'floor-leg-raise': 'flegraise', 'glute-bridge': 'bridge',
+  // on a pull-up bar
+  'pull-up': 'pullup', 'chin-up': 'pullup', 'negative-pull-up': 'pullup', 'dead-hang': 'hang',
+  'hanging-knee-raise': 'kneeraise', 'hanging-leg-raise': 'hlegraise',
 };
+
+// A card drawn sitting on the bench, redrawn standing for a player who has no bench: the whole upper body
+// moves to where a standing figure's would be, and the legs straighten under it.
+const upright = new Map();
+function standing(pose) {
+  if (!upright.has(pose)) {
+    const dx = 56 - pose.a.h[0], dy = 44 - pose.a.h[1], move = (p) => p && [p[0] + dx, p[1] + dy];
+    const b = { ...pose.b };
+    if (b.h) b.h = move(b.h);
+    if (b.w) b.w = move(b.w);
+    upright.set(pose, { ...pose, bench: null, kb: 'R', sides: null, a: { ...pose.a, h: [56, 44], w: move(pose.a.w), f: [57, 78] }, b });
+  }
+  return upright.get(pose);
+}
+// The pose a card is drawn in. standing: the player has no bench.
+function poseOf(exId, isStanding = false) {
+  const pose = POSES[SHOWS[exId]] ?? POSES.curl;
+  return isStanding && pose.bench === 'seat' && EX[exId].stands ? standing(pose) : pose;
+}
 
 // How the dumbbell sits in the hand, as the drawing sees it.
 // end: pointing at you (palms forward or back), so you see its round end. level: lying flat, front to back.
 // upright: standing on end. cross: square to the forearm and turning with it (hammer grip).
 const GRIP_BY_POSE = {
-  curl: 'end', scurl: 'end', icurl: 'end', conc: 'end', press: 'end', ipress: 'end', fpress: 'end', ohp: 'end', raise: 'end', lraise: 'end',
+  curl: 'end', scurl: 'end', icurl: 'end', conc: 'end', press: 'end', ipress: 'end', fpress: 'end', ohp: 'end', raise: 'end', lraise: 'end', bridge: 'end',
   thrust: 'end', crunch: 'end', twist: 'end',
-  fly: 'level', pushup: 'level', row: 'level', shrug: 'level', calf: 'level', lunge: 'level', rdl: 'level',
+  fly: 'level', ffly: 'level', pushup: 'level', row: 'level', shrug: 'level', calf: 'level', lunge: 'level', rdl: 'level',
   ohext: 'upright', pullover: 'upright', squat: 'upright',
-  skull: 'cross', kick: 'cross',
+  skull: 'cross', fskull: 'cross', kick: 'cross',
 };
 // Counted as bodyweight, but done with the hands on dumbbells.
 const PROPS = ['deep-push-up'];
 const GRIP = {
   hammer: 'cross', 'cross-body': 'cross', waiter: 'upright',
   'neutral-press': 'level', 'squeeze-press': 'level', 'close-press': 'level', 'incline-fly': 'level', tate: 'upright',
-  'bent-row': 'end', 'wide-row': 'end',
+  'bent-row': 'end', 'wide-row': 'end', 'floor-neutral-press': 'level', 'floor-squeeze-press': 'level', 'floor-close-press': 'level',
 };
 
 // The middle joint of a two-bone limb reaching from `from` to `to`. There are always two places it could be,
@@ -163,11 +197,12 @@ const isHeld = (ex) => ex.kind === 'db1' || ex.kind === 'db2' || PROPS.includes(
 const liftOf = (exId) => (SHOWS[exId] === 'pushup' ? -2.2 : 0);
 
 // How far a drawing reaches over its whole movement: [left, top, right, bottom].
-export function reach(exId) {
-  const ex = EX[exId], pose = POSES[SHOWS[exId]] ?? POSES.curl, grip = gripOf(exId);
+export function reach(exId, isStanding = false) {
+  const ex = EX[exId], pose = poseOf(exId, isStanding), grip = gripOf(exId);
   const [bx, by] = !isHeld(ex) ? [0, 0] : grip === 'end' ? [6.2, 6.2] : grip === 'level' ? [10.5, 5.9] : grip === 'upright' ? [5.9, 10.5] : [11.6, 11.6];
   const box = [Infinity, Infinity, -Infinity, -Infinity];
   const add = (p, rx, ry = rx) => { box[0] = Math.min(box[0], p[0] - rx); box[1] = Math.min(box[1], p[1] - ry); box[2] = Math.max(box[2], p[0] + rx); box[3] = Math.max(box[3], p[1] + ry); };
+  if (pose.bar) add(pose.bar, 4);
   for (const k of STEPS) {
     const j = joints(pose, k);
     for (const p of [j.hip, j.sh, j.el, j.hand, j.kn, j.foot, j.kn2, j.foot2, ...Object.values(j.other ?? {})]) if (p) add(p, 4.2);
@@ -178,8 +213,8 @@ export function reach(exId) {
 }
 // The picture frame as [x, y, width, height]: the usual 120 by 90, grown (keeping its shape) for a
 // movement that reaches past it, so nothing is ever cut off at the edge.
-export function frameFor(exId) {
-  const [l, t, r, b] = reach(exId), pad = 2;
+export function frameFor(exId, isStanding = false) {
+  const [l, t, r, b] = reach(exId, isStanding), pad = 2;
   let x0 = Math.min(0, l - pad), y0 = Math.min(0, t - pad), x1 = Math.max(120, r + pad);
   const y1 = Math.max(90, b + pad);
   const w = x1 - x0, h = y1 - y0;
@@ -200,9 +235,10 @@ function benchArt(kind) {
 }
 
 // One exercise, drawn. animate: loop the movement (otherwise the end position is shown).
+// standing: the player has no bench, so a card normally drawn seated is drawn standing.
 // The figure is drawn in the current text colour, the working part in the suit's colour.
-export function picto(exId, { size = 120, animate = false } = {}) {
-  const ex = EX[exId], pose = POSES[SHOWS[exId]] ?? POSES.curl;
+export function picto(exId, { size = 120, animate = false, standing: isStanding = false } = {}) {
+  const ex = EX[exId], pose = poseOf(exId, isStanding);
   const still = !animate || matchMedia('(prefers-reduced-motion: reduce)').matches;
   const steps = still ? [1] : STEPS;
   const frames = steps.map(k => joints(pose, k));
@@ -240,7 +276,7 @@ export function picto(exId, { size = 120, animate = false } = {}) {
   const trunk = pose.front
     ? `<polygon points="${chest(first)}" fill="currentColor" stroke="currentColor" stroke-width="${w}" stroke-linejoin="round">${anim('points', chest)}</polygon>`
     : line('body', j => pts(j.base, j.top), pose.hot === 'core' ? hot : 'currentColor').replace(`stroke-width="${w}"`, 'stroke-width="8.4"');
-  return `<svg class="picto" viewBox="${frameFor(exId).join(' ')}" width="${size}" height="${Math.round(size * 0.75)}" role="img" aria-label="${ex.name}">
+  return `<svg class="picto" viewBox="${frameFor(exId, isStanding).join(' ')}" width="${size}" height="${Math.round(size * 0.75)}" role="img" aria-label="${ex.name}">
     <rect x="6" y="${FLOOR + 3.4}" width="108" height="1.6" rx=".8" fill="currentColor" opacity=".16"/>
     <g fill="currentColor" opacity=".3">${benchArt(pose.bench)}</g>
     ${frames[0].foot2 ? line('far', j => pts(j.hip, j.kn2, j.foot2), 'currentColor').replace('<polyline', '<polyline opacity=".45"') : ''}
@@ -249,5 +285,6 @@ export function picto(exId, { size = 120, animate = false } = {}) {
     <circle cx="${r1(first.head[0])}" cy="${r1(first.head[1])}" r="${HEAD}" fill="currentColor">${anim('cx', j => r1(j.head[0]))}${anim('cy', j => r1(j.head[1]))}</circle>
     ${line('arm', j => pts(j.sh, j.el, j.hand), limb)}${pose.front ? line('arm', j => pts(j.other.sh, j.other.el, j.other.hand), limb) : ''}
     ${bell}
+    ${pose.bar ? `<circle cx="${pose.bar[0]}" cy="${pose.bar[1]}" r="2.9" fill="#7A8296" stroke="currentColor" stroke-width="1"/>` : ''}
   </svg>`;
 }

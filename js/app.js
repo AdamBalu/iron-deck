@@ -128,7 +128,7 @@ const syncText = () => ({
 }[sync.status]);
 const ui = {
   screen: S ? 'home' : 'setup', enter: true, sheet: null,
-  setup: { bench: 20, curl: 12.5, step: 2.5, max: 30, incline: true, quickChange: false },
+  setup: { bench: 20, curl: 12.5, step: 2.5, max: 30, benchType: 'incline', bar: false, quickChange: false },
   hand: null, reps: 0, adjust: false, cue: false, hold: null, dropQueue: [], opened: new Set(),
   restEnd: 0, restTotal: 0, restChange: null, summary: null, confirmReset: false, install: null, notice: null,
 };
@@ -176,7 +176,11 @@ const videoUrl = (ex) => 'https://www.youtube.com/results?search_query=' +
 const videoLink = (ex) => `<a class="video" href="${videoUrl(ex)}" target="_blank" rel="noopener">Watch a video</a>`;
 
 // The picture window of an exercise card: the movement, on a wash of the suit's colour.
-const art = (id, size, animate = false) => `<span class="art" style="--c:${SUITS[EX[id].suit].color}">${picto(id, { size, animate })}</span>`;
+const noBench = () => E.benchOf(S?.settings ?? ui.setup) === 'none';
+const art = (id, size, animate = false) => `<span class="art" style="--c:${SUITS[EX[id].suit].color}">${picto(id, { size, animate, standing: noBench() })}</span>`;
+// How to do a card, worded for the player's setup.
+const cueOf = (ex) => (noBench() && ex.cueStanding) || ex.cue;
+const BENCHES = [['incline', 'Tilts up'], ['flat', 'Flat only'], ['none', 'No bench']];
 // Shrinks a card title just enough that its longest word fits on one line instead of breaking.
 const fit = (name, room) => Math.min(1, room / Math.max(...name.split(/[\s-]+/).map(w => w.length))).toFixed(2);
 // A card title on at most two lines: broken where the two lines come out most even, and shrunk only
@@ -330,11 +334,12 @@ function setupScreen() {
       <p>Every workout is a hand of cards dealt fresh. Check your setup below and you are in.</p>
     </header>
     <section class="panel">
-      ${stepper('bench', 'Bench press', 'Weight of each dumbbell')}
+      ${stepper('bench', s.benchType === 'none' ? 'Floor press' : 'Bench press', 'Weight of each dumbbell')}
       ${stepper('curl', 'Biceps curl', 'Weight of each dumbbell')}
       ${stepper('max', 'Heaviest dumbbell', 'The most you can load on one')}
       ${choice('step', 'Smallest weight jump', 'Per dumbbell', [[1, '1 kg'], [2, '2 kg'], [2.5, '2.5 kg'], [5, '5 kg']])}
-      ${choice('incline', 'Bench back tilts up', '', [[true, 'Yes'], [false, 'No, flat only']])}
+      ${choice('benchType', 'Your bench', '', BENCHES)}
+      ${choice('bar', 'Pull-up bar', '', [[true, 'Yes'], [false, 'No']])}
       ${choice('quickChange', 'Changing the weight is', '', [[false, 'Slow, screw collars'], [true, 'Quick, dial or pin']])}
     </section>
     <button class="btn" data-act="setup-go">Deal my first hand</button>
@@ -600,7 +605,7 @@ function playScreen() {
       ${art(c.ex, 160, true)}
       <h2>${ex.name}</h2>
       <p class="setno">${setLine}</p>
-      ${ui.cue ? `<p class="cue">${ex.cue} ${videoLink(ex)}</p>` : ''}
+      ${ui.cue ? `<p class="cue">${cueOf(ex)} ${videoLink(ex)}</p>` : ''}
       ${mod}
       ${target}
       ${adjust}
@@ -635,7 +640,7 @@ function restScreen() {
         <small>Next up${c.boss ? ', the finisher' : `, set ${st.setNo} of ${st.setsTotal}`}</small>
         <div class="nextcard">
           <div class="mini plain">${suitIcon(ex.suit, 18)}<div><b>${ex.name}</b></div><span class="tgt">${targetText(c)}</span></div>
-          <div class="nextbody">${art(c.ex, 112, true)}<p class="nexttip">${c.mod && MODS[c.mod] ? `<b>${MODS[c.mod].name}.</b> ${MODS[c.mod].how} ` : ''}${ex.cue} ${videoLink(ex)}</p></div>
+          <div class="nextbody">${art(c.ex, 112, true)}<p class="nexttip">${c.mod && MODS[c.mod] ? `<b>${MODS[c.mod].name}.</b> ${MODS[c.mod].how} ` : ''}${cueOf(ex)} ${videoLink(ex)}</p></div>
         </div>
       </div>
     </div>
@@ -781,7 +786,7 @@ function progressScreen() {
 
 function deckScreen() {
   const owned = new Set(S.unlocked.exercises);
-  const possible = EXERCISES.filter(e => S.settings.incline || !e.incline);
+  const possible = EXERCISES.filter(e => E.usable(e, S.settings));
   const suits = SUIT_ORDER.map((s) => {
     const cards = possible.filter(e => e.suit === s).sort((a, b) => owned.has(b.id) - owned.has(a.id));
     const have = cards.filter(e => owned.has(e.id)).length;
@@ -859,7 +864,11 @@ function settingsScreen() {
     <section class="panel">
       ${stepper('max', 'Heaviest dumbbell', 'The most you can load on one', 2.5)}
       ${choice('step', 'Smallest weight jump', [[1, '1 kg'], [2, '2 kg'], [2.5, '2.5 kg'], [5, '5 kg']])}
-      ${choice('incline', 'Bench back tilts up', [[true, 'Yes'], [false, 'No, flat only']])}
+      <div class="field col">
+        <div><b>Your bench</b></div>
+        <div class="seg">${BENCHES.map(([v, text]) => `<button data-act="set" data-key="benchType" data-val="${v}" class="${E.benchOf(s) === v ? 'on' : ''}">${text}</button>`).join('')}</div>
+      </div>
+      ${choice('bar', 'Pull-up bar', [[true, 'Yes'], [false, 'No']])}
       ${choice('quickChange', 'Changing the weight is', [[false, 'Slow, screw collars'], [true, 'Quick, dial or pin']])}
     </section>
     <section class="panel">
@@ -971,7 +980,7 @@ function sheetView() {
       <p class="corner">${suitIcon(ex.suit, 18)}<span>${ex.suit === 'rest' ? 'Legs and shoulders' : `${suitName(ex.suit)} card`}</span></p>
       ${art(ex.id, 260, true)}
       <h2>${ex.name}</h2>
-      <p>${ex.cue} ${videoLink(ex)}</p>
+      <p>${cueOf(ex)} ${videoLink(ex)}</p>
       ${spark(l)}
       <p class="muted">${plays ? `Played ${plays} ${plays === 1 ? 'time' : 'times'}${best ? `. Best: ${best}` : ''}.` : 'Not played yet. It is first in line for the next hand of this suit.'}</p>
       <button class="quiet" data-act="close-sheet">Close</button>
@@ -1243,7 +1252,7 @@ const actions = {
     render();
   },
   'setup-set'({ field, val }) {
-    ui.setup[field] = field === 'step' ? +val : val === 'true';
+    ui.setup[field] = field === 'step' ? +val : field === 'benchType' ? val : val === 'true';
     render();
   },
   'setup-go'() {
@@ -1388,10 +1397,14 @@ const actions = {
   },
   'reveal-equip'() { E.equip(S, rv.id); save(); sfx(ITEMS[rv.id].slot === 'weapon' ? 'equip-weapon' : 'equip-armor'); nextReveal(); },
   set({ key, val }) {
-    S.settings[key] = key === 'theme' ? val : key === 'step' ? +val : val === 'true';
+    S.settings[key] = key === 'theme' || key === 'benchType' ? val : key === 'step' ? +val : val === 'true';
     if (key === 'step') S.settings.min = Math.min(S.settings.min, +val);
+    if (key === 'benchType') S.settings.incline = val === 'incline'; // the older name for the same fact
+    // New equipment brings its starter cards with it.
+    const joined = key === 'benchType' || key === 'bar' ? E.fitDeck(S) : [];
     S.pending = null;
     save(); render();
+    if (joined.length) toast(`${joined.length} new ${joined.length === 1 ? 'card joins' : 'cards join'} your deck`);
     if (key === 'sound' && val === 'true') sfx('place');
     if (key === 'bigScreen' && val === 'true') {
       // The code is made once and travels with the save, so every device feeds the same screen.

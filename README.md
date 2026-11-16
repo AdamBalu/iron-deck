@@ -1,6 +1,6 @@
 # Iron Deck
 
-Dumbbell workouts dealt as a hand of cards, fresh every time. Built for a bench and a pair of adjustable dumbbells.
+Dumbbell workouts dealt as a hand of cards, fresh every time. Built for a pair of adjustable dumbbells, with or without a bench, and a pull-up bar if you have one.
 
 - Each muscle group is a suit. Chest and biceps are dealt most, then back, triceps, abs, and the rest.
 - A full hand takes 20 to 30 minutes. A quick hand takes about 10.

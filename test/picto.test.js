@@ -43,3 +43,22 @@ test('every exercise drawing stays inside its picture frame for the whole moveme
     assert.ok(Math.abs(w / h - 4 / 3) < 0.02, `${ex.id}: the frame lost its shape`);
   }
 });
+
+import { picto } from '../js/picto.js';
+
+test('every card moves, bar cards show the bar, and a seated card can be drawn standing', () => {
+  globalThis.matchMedia ??= () => ({ matches: false });
+  for (const ex of EXERCISES) {
+    const svg = picto(ex.id, { animate: true });
+    assert.ok(svg.includes('<animate'), `${ex.id} does not move`);
+    assert.equal(svg.includes('r="2.9"'), !!ex.bar, `${ex.id}: bar drawn or missing wrongly`);
+    // a stand-in for players with no bench must not be drawn on one
+    if (ex.floor) assert.ok(!svg.includes('y="60" width='), `${ex.id} is drawn on a bench`);
+  }
+  for (const ex of EXERCISES.filter(e => e.stands)) {
+    const [l, t, r, b] = reach(ex.id, true), [x, y, w, h] = frameFor(ex.id, true);
+    assert.ok(l >= x && t >= y && r <= x + w && b <= y + h, `${ex.id} standing is cut off`);
+    assert.ok(!picto(ex.id, { standing: true }).includes('y="60" width='), `${ex.id} still shows the bench when standing`);
+    assert.ok(picto(ex.id).includes('y="60" width='), `${ex.id} lost its bench for players who have one`);
+  }
+});

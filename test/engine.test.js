@@ -1049,3 +1049,89 @@ test('a hand dealt before buffs existed plays on without them', () => {
   assert.ok(r.dmg > 0);
   assert.deepEqual(hand.buffs, []);
 });
+
+// ----- equipment: the setup decides which cards exist for a player -----
+import { usable, fitDeck, benchOf } from '../js/engine.js';
+import { EXERCISES } from '../js/data.js';
+
+// The 63 cards the app had before equipment choices, in order. A player with a tilting bench and no bar must still see exactly these.
+const ORIGINAL = ['bench-press', 'incline-press', 'fly', 'push-up', 'floor-press', 'squeeze-press', 'neutral-press', 'incline-fly', 'one-arm-press',
+  'feet-up-push-up', 'deep-push-up', 'curl', 'hammer', 'incline-curl', 'concentration', 'seated-curl', 'spider', 'zottman', 'cross-body', 'drag',
+  'wide-curl', 'waiter', 'preacher', 'one-arm-row', 'bent-row', 'reverse-fly', 'chest-row', 'pullover', 'shrug', 'renegade-row', 'wide-row',
+  'superman', 'overhead-ext', 'skull', 'bench-dip', 'kickback', 'close-press', 'tate', 'one-arm-overhead', 'diamond-push-up', 'crunch',
+  'leg-raise', 'plank', 'russian-twist', 'bicycle', 'reverse-crunch', 'v-up', 'dead-bug', 'mountain-climber', 'weighted-crunch', 'hollow-hold',
+  'side-plank', 'goblet-squat', 'shoulder-press', 'rdl', 'lateral-raise', 'split-squat', 'hip-thrust', 'reverse-lunge', 'calf-raise', 'arnold',
+  'step-up', 'front-raise'];
+const STARTERS = ['bench-press', 'incline-press', 'fly', 'push-up', 'curl', 'hammer', 'incline-curl', 'concentration', 'one-arm-row', 'bent-row',
+  'reverse-fly', 'overhead-ext', 'skull', 'bench-dip', 'crunch', 'leg-raise', 'plank', 'russian-twist', 'goblet-squat', 'shoulder-press', 'rdl', 'lateral-raise'];
+
+test('a tilting bench and no bar sees exactly the cards the app always had, new save or old', () => {
+  const fresh = setup();
+  assert.deepEqual(EXERCISES.filter(e => usable(e, fresh.settings)).map(e => e.id), ORIGINAL);
+  assert.deepEqual(fresh.unlocked.exercises, STARTERS);
+  // a save written before the choice existed: only "incline" is known
+  const old = setup();
+  delete old.settings.benchType; delete old.settings.bar;
+  assert.equal(benchOf(old.settings), 'incline');
+  assert.deepEqual(EXERCISES.filter(e => usable(e, old.settings)).map(e => e.id), ORIGINAL);
+  const deck = [...old.unlocked.exercises];
+  migrate(old);
+  assert.deepEqual(old.unlocked.exercises, deck, 'bringing a save up to date changes no cards');
+  assert.equal(old.settings.benchType, 'incline');
+  assert.equal(old.settings.bar, false);
+  assert.deepEqual(fitDeck(old), [], 'and there is nothing new to hand over');
+});
+
+test('every setup has enough cards in every suit, and its starting deck is one it can play', () => {
+  for (const benchType of ['incline', 'flat', 'none']) for (const bar of [false, true]) {
+    const s = setup({ benchType, bar, incline: undefined });
+    for (const suit of SUIT_ORDER) {
+      const can = EXERCISES.filter(e => e.suit === suit && usable(e, s.settings));
+      assert.ok(can.length >= 6, `${benchType}${bar ? ' + bar' : ''}: only ${can.length} ${suit} cards`);
+      const start = s.unlocked.exercises.filter(id => EX[id].suit === suit);
+      assert.ok(start.length >= 3, `${benchType}${bar ? ' + bar' : ''}: starts with ${start.length} ${suit} cards`);
+    }
+    for (const id of s.unlocked.exercises) assert.ok(usable(EX[id], s.settings), `${benchType}: starts with ${id}`);
+  }
+});
+
+test('no bench is never dealt a bench card, and a bar card only ever goes to a player with a bar', () => {
+  for (const bar of [false, true]) {
+    const s = setup({ benchType: 'none', bar, incline: undefined });
+    const rng = mulberry32(31 + (bar ? 1 : 0));
+    let barCards = 0;
+    for (let i = 0; i < 60; i++) {
+      const { hand } = fullRound(s, rng, T0 + i * 2 * DAY, i % 6 === 5 ? 'quick' : 'full');
+      for (const c of handCards(hand)) {
+        const ex = EX[c.ex];
+        assert.ok(!ex.bench && !ex.incline, `hand ${i}: ${c.ex} needs a bench`);
+        assert.ok(bar || !ex.bar, `hand ${i}: ${c.ex} needs a bar`);
+        if (ex.bar) barCards++;
+      }
+      assert.ok(hand.estMin <= 32, `hand ${i} runs ${hand.estMin} min`);
+    }
+    for (const id of s.unlocked.exercises) assert.ok(usable(EX[id], s.settings), `loot handed out ${id}`);
+    if (bar) assert.ok(barCards > 5, `only ${barCards} bar cards in 60 hands`);
+  }
+});
+
+test('buying a bar or losing the bench changes the deal at once and takes nothing away for good', () => {
+  const s = setup();
+  s.settings.bar = true;
+  assert.deepEqual(fitDeck(s), ['chin-up', 'pull-up', 'hanging-knee-raise']);
+  assert.ok(s.fresh.includes('pull-up'), 'new cards are marked new');
+  assert.deepEqual(fitDeck(s), [], 'handing over twice adds nothing');
+
+  s.settings.benchType = 'none'; s.settings.incline = false;
+  const joined = fitDeck(s);
+  assert.ok(joined.includes('floor-press') && joined.includes('floor-fly'));
+  for (let seed = 1; seed <= 10; seed++) {
+    for (const c of handCards(dealHand(s, 'full', mulberry32(seed), T0))) assert.ok(!EX[c.ex].bench && !EX[c.ex].incline, `${c.ex} dealt with no bench`);
+  }
+  assert.ok(s.unlocked.exercises.includes('bench-press'), 'the bench cards are kept for the day the bench comes back');
+  s.settings.benchType = 'incline'; s.settings.incline = true;
+  const back = new Set();
+  for (let seed = 1; seed <= 30; seed++) handCards(dealHand(s, 'full', mulberry32(seed), T0)).forEach(c => back.add(c.ex));
+  assert.ok([...back].some(id => EX[id].bench), 'bench cards are dealt again');
+  assert.ok(![...back].some(id => EX[id].floor), 'and the floor stand-ins step aside');
+});

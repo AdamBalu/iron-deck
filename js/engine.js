@@ -30,14 +30,38 @@ function pickWeighted(rng, items, weightOf) {
 
 // ---------- state ----------
 
+// ---------- equipment ----------
+// The bench a player has: 'incline' (the back tilts up), 'flat' or 'none'. Saves from before the choice
+// existed only know whether it tilts.
+export const benchOf = (settings) => settings.benchType ?? (settings.incline ? 'incline' : 'flat');
+// Can this setup play this card?
+export function usable(ex, settings) {
+  const bench = benchOf(settings);
+  if (ex.incline && bench !== 'incline') return false;
+  if (ex.bench && bench === 'none') return false;
+  if (ex.floor && bench !== 'none') return false;
+  if (ex.bar && !settings.bar) return false;
+  return true;
+}
+// The cards a setup starts with: the base deck it can play, plus the stand-ins for what it lacks.
+const starters = (settings) => EXERCISES.filter(e => usable(e, settings) && (e.base || e.fill === benchOf(settings))).map(e => e.id);
+// After a change of equipment: hands over the starter cards the new setup brings and returns their ids.
+// Nothing is ever taken away. A card the setup can no longer play stays out of the deal until the equipment is back.
+export function fitDeck(state) {
+  const added = starters(state.settings).filter(id => !state.unlocked.exercises.includes(id));
+  state.unlocked.exercises.push(...added);
+  state.fresh.push(...added.filter(id => !state.fresh.includes(id)));
+  return added;
+}
+
 export function newState(setup, now) {
+  const benchType = setup.benchType ?? (setup.incline ? 'incline' : 'flat');
   const settings = {
     bench: setup.bench, curl: setup.curl, step: setup.step, min: setup.step, max: setup.max ?? 40,
-    incline: !!setup.incline, quickChange: !!setup.quickChange,
+    benchType, incline: benchType === 'incline', bar: !!setup.bar, quickChange: !!setup.quickChange,
     sound: true, buzz: true, theme: 'indigo', arena: !!setup.arena,
   };
-  const exercises = EXERCISES.filter(e => e.base && (settings.incline || !e.incline)).map(e => e.id);
-  if (!settings.incline) exercises.push('seated-curl', 'squeeze-press');
+  const exercises = starters(settings);
   const zero = () => Object.fromEntries(SUIT_ORDER.map(s => [s, 0]));
   return {
     v: 1, createdAt: now, settings,
@@ -68,13 +92,16 @@ export function migrate(state) {
     delete state.legends;
   }
   state.unlocked.combos ??= [];
+  // Equipment choices arrived later: an older save has a bench (tilting or flat) and no pull-up bar.
+  state.settings.benchType ??= state.settings.incline ? 'incline' : 'flat';
+  state.settings.bar ??= false;
   state.foesDown ??= Math.floor((state.hands ?? 0) / 4);
   state.foe ??= spawnFoe(state.foesDown, state);
   return state;
 }
 
 const ownedExercises = (state) =>
-  state.unlocked.exercises.map(id => EX[id]).filter(e => e && (state.settings.incline || !e.incline));
+  state.unlocked.exercises.map(id => EX[id]).filter(e => e && usable(e, state.settings));
 
 // ---------- weights, ranges, targets ----------
 
@@ -992,7 +1019,7 @@ function progress(lift, card, settings) {
 function drawLoot(state, rng, bossDrop = false) {
   const s = state.settings;
   const locked = {
-    exercise: EXERCISES.filter(e => !state.unlocked.exercises.includes(e.id) && (s.incline || !e.incline)),
+    exercise: EXERCISES.filter(e => !state.unlocked.exercises.includes(e.id) && usable(e, s)),
     mod: Object.keys(MODS).filter(m => !state.unlocked.mods.includes(m)),
     theme: LOOT_THEMES.filter(t => !state.unlocked.themes.includes(t)),
     item: Object.values(ITEMS).filter(it => !state.items[it.id]),
