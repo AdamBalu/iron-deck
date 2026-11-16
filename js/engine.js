@@ -2,7 +2,7 @@
 import {
   SUITS, SUIT_ORDER, EXERCISES, EX, MODS, STYLES, LOOT_THEMES,
   SEASONS, WILD_RANGES, HEAVY_THINGS,
-  FOES_SMALL, FOES_BIG, BANE_BONUS, COMBOS, ITEMS, FORGE_COST,
+  FOES_SMALL, FOES_BIG, BANE_BONUS, BUFFS, COMBOS, ITEMS, FORGE_COST,
 } from './data.js';
 
 const DAY = 86400000;
@@ -259,9 +259,46 @@ export function power(state, suit) {
   return 10 + (suitLevelFor(state.suitXp[suit]).level - 1) + (equipped(state, SUIT_SLOT[suit])?.value ?? 0);
 }
 
+// ---------- buffs ----------
+// Where each buff stands. on: it is lifting blows now (the shake: waiting for the next hand).
+// open: it can be claimed with a tap right now.
+export function buffState(state, now) {
+  const b = state.buffs ?? {};
+  const sameDay = (x, y) => new Date(x).toDateString() === new Date(y).toDateString();
+  return {
+    shake: {
+      on: !!b.shake,
+      open: !b.shake && !!state.lastHandAt && b.shakeFor !== state.lastHandAt && now - state.lastHandAt <= BUFFS.shake.window * HOUR,
+    },
+    creatine: {
+      on: now < (b.creatineUntil ?? 0),
+      open: !(b.creatineAt && sameDay(b.creatineAt, now)),
+      hoursLeft: Math.max(0, Math.ceil(((b.creatineUntil ?? 0) - now) / HOUR)),
+    },
+  };
+}
+// The tap. Returns false when that buff is not there to claim.
+export function claimBuff(state, id, now) {
+  if (!buffState(state, now)[id]?.open) return false;
+  const b = state.buffs ??= {};
+  if (id === 'shake') { b.shake = true; b.shakeFor = state.lastHandAt; }
+  else { b.creatineAt = now; b.creatineUntil = now + BUFFS.creatine.hours * HOUR; }
+  return true;
+}
+// The buffs behind a hand. They are fixed by its first set, so a hand hits the same from start to finish
+// even if the creatine runs out halfway. Before that first set: whatever is in force at this moment.
+export function handBuffs(state, hand, now) {
+  if (hand?.buffs) return hand.buffs;
+  if (now == null) return [];
+  const st = buffState(state, now);
+  return Object.keys(BUFFS).filter(id => st[id].on);
+}
+const boostOf = (ids) => ids.reduce((m, id) => m * (1 + BUFFS[id].bonus), 1);
+
 // One set against the current boss. trail is what has been played so far this hand.
+// boost: what the hand's buffs multiply the blow by.
 // Pure: returns the hit and the entry to append to the trail, changes nothing.
-function strike(state, trail, card, reps, record, skip = []) {
+function strike(state, trail, card, reps, record, skip = [], boost = 1) {
   if (!(reps > 0)) return { dmg: 0, crit: false, weak: false, bane: false, combos: [], iron: 0, entry: null };
   const suit = EX[card.ex].suit;
   const weapon = equipped(state, 'weapon');
@@ -298,6 +335,7 @@ function strike(state, trail, card, reps, record, skip = []) {
   for (const id of combos) dmg += COMBOS[id].bonus + perk('combo');
   // The right kind of weapon for this boss lifts the whole blow.
   if (bane) dmg *= 1 + BANE_BONUS;
+  dmg *= boost;
 
   // In the arena the blow is also shaped by the fight so far. A forecast of a whole hand leaves that out.
   const arena = skip.includes('roll') ? null : arenaBlow(state);
@@ -369,33 +407,35 @@ function arenaBlow(state) {
 }
 
 // What the set about to be played would hit for, plain and as a record.
-export function nextHit(state, hand) {
+export function nextHit(state, hand, now) {
   const s = hand.steps[hand.i];
   if (!s) return null;
   const card = hand.blocks[s.b].cards[s.c];
   const trail = hand.trail ?? [];
   const reps = card.reps ?? 1;
+  const boost = boostOf(handBuffs(state, hand, now));
   return {
-    plain: strike(state, trail, card, reps, false).dmg,
-    crit: strike(state, trail, card, reps, true).dmg,
+    plain: strike(state, trail, card, reps, false, [], boost).dmg,
+    crit: strike(state, trail, card, reps, true, [], boost).dmg,
     weak: EX[card.ex].suit === foeInfo(state.foe.k).weak,
   };
 }
 
 // What the rest of a hand should do to the boss if every target is met and nothing is a record.
-export function forecast(state, hand) {
+export function forecast(state, hand, now) {
   const trail = [...(hand.trail ?? [])];
   const combos = new Set();
+  const buffs = handBuffs(state, hand, now), boost = boostOf(buffs);
   let dmg = 0;
   for (const s of hand.steps.slice(hand.i)) {
     const card = hand.blocks[s.b].cards[s.c];
-    const hit = strike(state, trail, card, card.reps ?? 1, false, ['roll']);
+    const hit = strike(state, trail, card, card.reps ?? 1, false, ['roll'], boost);
     if (hit.entry) trail.push(hit.entry);
     dmg += hit.dmg;
     hit.combos.forEach(c => combos.add(c));
   }
   const weakSuit = foeInfo(state.foe.k).weak;
-  return { dmg, weak: handCards(hand).filter(c => EX[c.ex].suit === weakSuit).length, combos: [...combos] };
+  return { dmg, weak: handCards(hand).filter(c => EX[c.ex].suit === weakSuit).length, combos: [...combos], buffs };
 }
 
 export function levelFor(xp, k = 120, p = 1.6) {
@@ -789,6 +829,11 @@ export function logSet(state, hand, reps, now, rng = null) {
   if (!s) return null;
   const card = hand.blocks[s.b].cards[s.c];
   if (!hand.startedAt) hand.startedAt = now;
+  if (!hand.buffs) {
+    // The first set of a hand settles which buffs are behind it, and the shake is drunk up.
+    hand.buffs = handBuffs(state, null, now);
+    if (state.buffs?.shake) state.buffs.shake = false;
+  }
   const known = state.lifts[card.key];
   hand.undo = {
     key: card.key, existed: !!known, bests: known ? known.bests.map(b => ({ ...b })) : null,
@@ -802,7 +847,7 @@ export function logSet(state, hand, reps, now, rng = null) {
   const record = isRecord(lift, card.w, reps);
   if (reps > 0) addBest(lift, card.w, reps);
   const trail = hand.trail ??= [];
-  const hit = strike(state, trail, card, reps, record);
+  const hit = strike(state, trail, card, reps, record, [], boostOf(hand.buffs));
   if (hit.entry) trail.push(hit.entry);
   state.foe.hp -= hit.dmg;
   hand.dmg = (hand.dmg ?? 0) + hit.dmg;
@@ -849,6 +894,7 @@ export function logSet(state, hand, reps, now, rng = null) {
   return {
     record, first: lift.sessions === 0, done: hand.done,
     dmg: hit.dmg, crit: hit.crit, weak: hit.weak, bane: hit.bane, combos: hit.combos, iron: hit.iron, foeDown, drop, fight,
+    buffs: hit.dmg > 0 ? hand.buffs : [],
   };
 }
 

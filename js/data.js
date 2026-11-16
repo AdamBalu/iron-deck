@@ -232,6 +232,14 @@ export const FOES_SMALL = [
   { name: 'The Mirror Doubt', taunt: 'Nothing is changing anyway.', weak: 'back', bane: 'mace' },
 ];
 export const BANE_BONUS = 0.25;
+
+// Buffs: things done away from the dumbbells that make the hero hit harder. Each one is claimed with a tap.
+//   shake: after a workout, within `window` hours of finishing it. Lifts every blow of the next hand.
+//   creatine: once a day. Lifts every blow for `hours` hours, so yesterday's scoop still covers today's hand.
+export const BUFFS = {
+  shake: { name: 'Protein shake', bonus: 0.1, window: 3, ask: 'Drunk your protein shake?', on: 'Next hand hits 10% harder' },
+  creatine: { name: 'Creatine', bonus: 0.1, hours: 36, ask: 'Taken your creatine today?', on: 'Every hit lands 10% harder' },
+};
 export const FOES_BIG = [
   { name: 'The One-Month Wall', taunt: 'This is where you usually stop.', weak: 'chest', bane: 'hammer' },
   { name: 'The Plateau', taunt: 'This is as strong as you get.', weak: 'biceps', bane: 'halberd' },

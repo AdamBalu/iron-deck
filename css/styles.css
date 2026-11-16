@@ -189,6 +189,30 @@ button.chip:active { transform: scale(.95); }
 .foe-report .foe { margin-top: 7px; }
 .seasoncard.down { background: linear-gradient(180deg, #FF8C82, var(--coral)); }
 .seasoncard.down strong { font-weight: 700; }
+/* buffs: a tap-to-claim button, or a quiet line while one is in force */
+.buffs { display: grid; gap: 8px; margin-top: 12px; }
+.buffs h3 { font-family: var(--body); font-weight: 500; font-size: 15px; color: var(--muted); margin-top: 6px; }
+.buff { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; border-radius: 14px; padding: 10px 13px; color: var(--paper); background: var(--panel); box-shadow: inset 0 0 0 1px var(--hair); }
+.buff svg { flex: none; color: var(--gold); }
+.buff span { flex: 1; min-width: 0; }
+.buff b { display: block; font-weight: 700; font-size: 15px; line-height: 1.25; }
+.buff small { display: block; font-size: 13px; line-height: 1.3; color: var(--muted); }
+.buff.ask { background: color-mix(in srgb, var(--gold) 11%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gold) 65%, transparent); }
+.buff.ask em { flex: none; font-style: normal; font-weight: 700; font-size: 13.5px; color: var(--ink); background: var(--gold); border-radius: 99px; padding: 6px 13px 5px; }
+.buff.ask:active { transform: scale(.98); }
+.buff.on small { color: var(--gold); }
+.buffs.compact { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-top: 10px; }
+.buffs.compact .buff { padding: 8px 10px 7px; gap: 8px; border-radius: 13px; }
+.buffs.compact .buff svg { width: 22px; height: 22px; }
+.buffs.compact .buff b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buffs.compact .buff small { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buffs.compact .buff.ask small { color: var(--gold); font-weight: 700; }
+/* on a phone the chips take their room from the card stack, not from the Deal button */
+@media (max-width: 1099px) {
+  .buffs.compact + .stack-wrap { min-height: 0; padding: 12px 0 18px; }
+  .buffs.compact + .stack-wrap .stack { width: 132px; }
+  .buffs.compact + .stack-wrap .stack .back.front span { font-size: 50px; }
+}
 .fight { margin-top: 12px; font-size: 14.5px; color: color-mix(in srgb, var(--paper), var(--muted) 25%); }
 .fight b { color: var(--paper); font-weight: 700; }
 .kill { margin-top: 10px; border-radius: 12px; padding: 10px 13px; font-size: 15px; background: color-mix(in srgb, var(--coral) 20%, var(--paper)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--coral) 55%, transparent); }

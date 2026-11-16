@@ -1,6 +1,6 @@
 // Screens and interaction. All workout rules live in engine.js.
 import {
-  SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES, COMBOS,
+  SUITS, SUIT_ORDER, EX, EXERCISES, MODS, STYLES, THEMES, COMBOS, BUFFS,
   ITEMS, RARITY, RARITY_COLOR, FORGE_COST, WEAPONS, ARMOR, SLOT_NAME, ULTIMATES, perkText,
 } from './data.js';
 import { playArena, closeArena } from './arena.js';
@@ -233,6 +233,9 @@ function showFx(html, ms) {
   setTimeout(() => { if (mine === fxToken) $fx.innerHTML = ''; }, ms);
 }
 
+// What the hand's buffs add to a blow, as a tag for the fight scene: "Buffed +21%".
+const buffTag = (ids) => (ids?.length ? [`Buffed +${Math.round((ids.reduce((m, id) => m * (1 + BUFFS[id].bonus), 1) - 1) * 100)}%`] : []);
+
 // The fight, played for a moment after every set: your hero lunges and the boss takes the hit.
 // was: the boss as it stood before the set. mode: 'hit', 'crit' for a record, 'down' for the final blow.
 const STRIKE_AT = 0.36; // seconds into the scene at which the blow lands
@@ -240,7 +243,7 @@ function strike(res, was, mode, prize = '') {
   if (!res.dmg) return;
   const info = E.foeInfo(was.k), kind = blow();
   const pct = (hp) => Math.max(0, Math.round(hp / was.max * 100));
-  const notes = [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : []), ...(res.bane ? [`Fears ${WEAPONS[info.bane].many}`] : [])];
+  const notes = [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : []), ...(res.bane ? [`Fears ${WEAPONS[info.bane].many}`] : []), ...buffTag(res.buffs)];
   const title = mode === 'down' ? `<p class="clash-title"><b>${info.name} is down</b><small>${prize}</small></p>`
     : mode === 'crit' ? '<p class="clash-title"><b>New record</b><small>Critical hit</small></p>' : '';
   const cut = kind === 'blade' ? 'M4 90Q60 64 96 6Q72 72 4 90Z' : 'M50 2 60 36 96 30 68 54 88 90 52 68 22 94 32 58 4 40 40 38Z';
@@ -283,7 +286,7 @@ function duel(res, was, mode, prize = '') {
     equip: S.equip, weapon, kind: blow(), color: weapon ? RARITY_COLOR[weapon.rarity] : '#FFD23F',
     boss: { k: was.k, name: info.name, big: info.big }, hp: { from: pct(was.hp), to: pct(was.hp - res.dmg) },
     dmg: res.dmg, crit: !!res.record, down: mode === 'down', prize, fight: res.fight,
-    notes: [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : []), ...(res.bane ? ['Feared weapon'] : [])],
+    notes: [...res.combos.map(id => COMBOS[id].name), ...(res.weak ? ['Weak spot'] : []), ...(res.bane ? ['Feared weapon'] : []), ...buffTag(res.buffs)],
     ultName: ULTIMATES[weapon?.line ?? 'none'], sfx, buzz,
     // closing early (a tap) lets waiting loot open at once
     onClose: () => { ui.fxUntil = now(); },
@@ -365,6 +368,29 @@ function fightBar() {
     <small>Block ${Math.round(E.guard(S) * 100)}%</small>${edge}</button>`;
 }
 
+// Buffs. One you can claim is a button to tap once you have really done it; one in force says what it is doing.
+const BUFF_ICON = {
+  shake: '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M8.5 2.5h7a1 1 0 0 1 1 1V6h-9V3.5a1 1 0 0 1 1-1ZM6.6 7.4h10.8l-1.1 12.3a2 2 0 0 1-2 1.8H9.7a2 2 0 0 1-2-1.8Z"/><path fill="var(--deep)" opacity=".55" d="M8.3 12h7.4l-.3 3.4H8.6Z"/></svg>',
+  creatine: '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M5 4.6A1.6 1.6 0 0 1 6.6 3h10.8A1.6 1.6 0 0 1 19 4.6V7H5ZM6 8.4h12V19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2Z"/><path fill="var(--deep)" opacity=".55" d="M8.2 11.5h7.6v5H8.2Z"/></svg>',
+};
+// title: the full version, with a heading, for the end of a workout. Without one: two small chips side by side,
+// so the table keeps its Deal button on screen.
+function buffRow(title = '') {
+  const st = E.buffState(S, now());
+  const chips = Object.keys(BUFFS).map((id) => {
+    const b = BUFFS[id], s = st[id];
+    if (s.open) {
+      const gain = id === 'shake' ? 'Your next hand hits 10% harder' : s.on ? `Still on for ${s.hoursLeft} h. Tap to renew it` : 'Every hit lands 10% harder for a day and a half';
+      const short = id === 'shake' ? 'Drunk it? Tap' : s.on ? `${s.hoursLeft} h left. Renew?` : 'Taken it? Tap';
+      return `<button class="buff ask" data-act="buff" data-id="${id}" aria-label="${b.ask} ${gain}">${BUFF_ICON[id]}<span><b>${title ? b.ask : b.name}</b><small>${title ? gain : short}</small></span>${title ? '<em>Tap</em>' : ''}</button>`;
+    }
+    if (!s.on) return '';
+    const doing = id === 'shake' ? (title ? b.on : '+10% next hand') : title ? `${b.on}, ${s.hoursLeft} h left` : `+10%, ${s.hoursLeft} h left`;
+    return `<div class="buff on">${BUFF_ICON[id]}<span><b>${b.name}</b><small>${doing}</small></span></div>`;
+  }).join('');
+  return chips ? `<section class="buffs ${title ? '' : 'compact'}">${title ? `<h3>${title}</h3>` : ''}${chips}</section>` : '';
+}
+
 function ensurePending() {
   const p = S.pending;
   if (!p || now() - p.createdAt > 3 * HOUR || p.mult !== E.multiplier(S, now())) {
@@ -405,7 +431,7 @@ function homeScreen() {
       <button class="chip" data-act="tab" data-to="progress">Level ${level}</button>
     </header>
     <p class="banner">${banner}</p>
-    ${foeStrip()}
+    ${foeStrip()}${buffRow()}
     <div class="stack-wrap"><div class="stack">
       <div class="back" style="--c:${c2}"><i></i></div>
       <div class="back" style="--c:${c1}"><i></i></div>
@@ -455,11 +481,12 @@ function dealScreen() {
     return `<section class="block ${b.boss ? 'boss' : ''} ${b.cards.length > 1 ? 'joined' : ''}">
       <h3><span>${blockLabel(b)}</span>${load}</h3><ul>${rows}</ul></section>`;
   }).join('');
-  const f = E.forecast(S, h);
+  const f = E.forecast(S, h, now());
   const foe = E.foeInfo(S.foe.k);
   const fight = `<p class="fight">${suitIcon(foe.weak, 14)} Against <b>${foe.name}</b> this hand hits for about <b>${num(f.dmg)}</b>${
     f.weak ? `, with ${f.weak === 1 ? 'one card' : `${f.weak} cards`} on its weak spot` : ''}${
-    f.combos.length ? `. Sets up ${listWords(f.combos.map(id => COMBOS[id].name))}` : ''}.</p>`;
+    f.combos.length ? `. Sets up ${listWords(f.combos.map(id => COMBOS[id].name))}` : ''}${
+    f.buffs.length ? `. Your ${listWords(f.buffs.map(id => BUFFS[id].name.toLowerCase()))} ${f.buffs.length > 1 ? 'are' : 'is'} in that number` : ''}.</p>`;
   const left = Math.max(0, RESHUFFLES - (S.reshuffles ?? 0));
   function state(c) { return c.first && S.hands ? '<em class="new">New to you</em>' : c.bumpedFrom != null ? '<em class="new">Heavier than last time</em>' : ''; }
   return `
@@ -532,7 +559,7 @@ function playScreen() {
       <button data-act="w" data-d="-1">− ${kg(S.settings.step)} kg</button>
       <button data-act="w" data-d="1">+ ${kg(S.settings.step)} kg</button>
     </div>` : '';
-  const nh = E.nextHit(S, hand());
+  const nh = E.nextHit(S, hand(), now());
   const foe = E.foeInfo(S.foe.k);
   let kill = '';
   // A record is only possible on a card you have played before.
@@ -684,6 +711,7 @@ function finishScreen() {
     ${season}
     <section class="lvls">${ups}</section>
     ${loot}
+    ${buffRow('After the workout')}
     <button class="btn" data-act="go-home">Back to the table</button>`;
 }
 
@@ -1336,6 +1364,13 @@ const actions = {
   },
   wear({ theme }) { S.settings.theme = theme; save(); applyTheme(); render(); },
   'card-info'({ id }) { ui.sheet = { card: id }; render(); },
+  buff({ id }) {
+    if (E.claimBuff(S, id, now())) {
+      save(); sfx('charge'); buzz([30, 40, 80]);
+      toast(id === 'shake' ? 'Protein shake: your next hand hits 10% harder' : 'Creatine: every hit lands 10% harder for 36 hours');
+    }
+    render();
+  },
   'foe-info'() { ui.sheet = 'foe'; render(); },
   'fight-info'() { ui.sheet = 'fight'; render(); },
   'item-info'({ id }) { ui.sheet = { item: id }; render(); },

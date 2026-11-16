@@ -975,3 +975,77 @@ test('a hand dealt before pace existed still finishes and still teaches the pace
   assert.ok(done.sets > 0 && s.hands === 1);
   assert.ok(s.pace > 1.3, `pace ${s.pace}`);
 });
+
+// ----- buffs: a protein shake after the workout, creatine once a day -----
+import { buffState, claimBuff, handBuffs, nextHit as hitNext } from '../js/engine.js';
+const HOUR = 3600000;
+
+test('a shake is claimed after a workout and lifts every blow of the next hand by a tenth', () => {
+  const s = setup();
+  assert.equal(buffState(s, T0).shake.open, false, 'no workout yet, nothing to drink to');
+  assert.equal(claimBuff(s, 'shake', T0), false);
+  fullRound(s, mulberry32(1), T0);
+  const done = T0 + 25 * 60000;
+  assert.equal(buffState(s, done + HOUR).shake.open, true);
+  assert.equal(buffState(s, done + 4 * HOUR).shake.open, false, 'too long after the workout');
+  assert.equal(claimBuff(s, 'shake', done + HOUR), true);
+  assert.equal(claimBuff(s, 'shake', done + HOUR + 1), false, 'one shake per workout');
+  assert.deepEqual(buffState(s, done + HOUR).shake, { on: true, open: false });
+
+  // the same hand, with and without the shake
+  const later = T0 + 2 * DAY;
+  const plainState = structuredClone(s); plainState.buffs = {};
+  const hand = dealHand(s, 'full', mulberry32(9), later), plain = structuredClone(hand);
+  assert.deepEqual(handBuffs(s, hand, later), ['shake']);
+  const preview = hitNext(s, hand, later).plain;
+  const a = logSet(s, hand, currentStep(hand).card.reps ?? 12, later, () => 0.99);
+  const b = logSet(plainState, plain, currentStep(plain).card.reps ?? 12, later, () => 0.99);
+  assert.deepEqual(a.buffs, ['shake']);
+  assert.ok(Math.abs(a.dmg - b.dmg * 1.1) <= 1, `${a.dmg} against ${b.dmg} without the shake`);
+  if (!a.record) assert.equal(a.dmg, preview, 'the preview already counted the shake');
+  // drunk up by that first set, but still behind the rest of this hand
+  assert.equal(s.buffs.shake, false);
+  assert.deepEqual(hand.buffs, ['shake']);
+  play(s, hand, later);
+  finishHand(s, hand, mulberry32(2), later + 20 * 60000);
+  const next = dealHand(s, 'full', mulberry32(10), later + 2 * DAY);
+  assert.deepEqual(handBuffs(s, next, later + 2 * DAY), [], 'the hand after that is back to normal');
+});
+
+test('creatine is claimed once a day and lasts a day and a half; the two buffs stack', () => {
+  const at = (d, h) => new Date(2026, 10, d, h).getTime();
+  const s = setup();
+  assert.equal(buffState(s, at(16, 8)).creatine.open, true);
+  assert.equal(claimBuff(s, 'creatine', at(16, 8)), true);
+  assert.equal(claimBuff(s, 'creatine', at(16, 21)), false, 'already taken today');
+  assert.equal(buffState(s, at(16, 21)).creatine.on, true);
+  assert.equal(buffState(s, at(17, 19)).creatine.on, true, "yesterday morning's scoop covers this evening");
+  assert.equal(buffState(s, at(17, 21)).creatine.on, false);
+  assert.equal(buffState(s, at(17, 7)).creatine.open, true, 'a new day, a new scoop');
+  assert.equal(buffState(s, at(16, 9)).creatine.hoursLeft, 35);
+
+  // a hand started under creatine keeps it to the end, even once it has run out
+  const hand = dealHand(s, 'full', mulberry32(3), at(17, 19));
+  logSet(s, hand, currentStep(hand).card.reps ?? 12, at(17, 19), () => 0.99);
+  assert.deepEqual(hand.buffs, ['creatine']);
+  assert.deepEqual(handBuffs(s, hand, at(18, 12)), ['creatine']);
+
+  // both at once: a tenth on top of a tenth
+  const two = setup(), none = setup();
+  two.buffs = { shake: true, creatine: true, creatineAt: at(16, 8), creatineUntil: at(17, 20) };
+  const h2 = dealHand(two, 'full', mulberry32(4), at(16, 18)), h0 = structuredClone(h2);
+  const x = logSet(two, h2, currentStep(h2).card.reps ?? 12, at(16, 18), () => 0.99);
+  const y = logSet(none, h0, currentStep(h0).card.reps ?? 12, at(16, 18), () => 0.99);
+  assert.deepEqual(x.buffs, ['shake', 'creatine']);
+  assert.ok(Math.abs(x.dmg - y.dmg * 1.21) <= 1, `${x.dmg} against ${y.dmg} unbuffed`);
+});
+
+test('a hand dealt before buffs existed plays on without them', () => {
+  const s = setup();
+  const hand = dealHand(s, 'full', mulberry32(6), T0);
+  logSet(s, hand, 10, T0, () => 0.99);
+  delete hand.buffs; // as an older version left it mid-hand
+  const r = logSet(s, hand, 10, T0 + 60000, () => 0.99);
+  assert.ok(r.dmg > 0);
+  assert.deepEqual(hand.buffs, []);
+});
