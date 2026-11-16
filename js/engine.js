@@ -177,10 +177,10 @@ export function foeInfo(k) {
 // A new boss is sized to the hero: about three hands for a smaller one, five for a season boss,
 // judged by how hard recent sets have been hitting. Never below its listed health.
 const HANDS_TO_BEAT = { small: 3, big: 5 };
-const SETS_PER_HAND = 17;
+const SETS_PER_HAND = 16; // until this player's own hands say otherwise (state.handSets)
 function spawnFoe(k, state) {
   const info = foeInfo(k);
-  const paced = (state?.hitAvg ?? 0) * SETS_PER_HAND * (info.big ? HANDS_TO_BEAT.big : HANDS_TO_BEAT.small);
+  const paced = (state?.hitAvg ?? 0) * (state?.handSets ?? SETS_PER_HAND) * (info.big ? HANDS_TO_BEAT.big : HANDS_TO_BEAT.small);
   const max = Math.max(info.max, Math.round(paced / 10) * 10);
   return { k, hp: max, max };
 }
@@ -637,7 +637,33 @@ function restAfter(hand, i, quickChange) {
   return { rest, change };
 }
 
-function estimate(hand, quickChange) {
+// Pace: how long this player really takes, against the planner's sums. 1.5 means a hand planned at
+// 20 minutes takes 30. It is learned from every finished hand, so "about 25 min" comes to mean 25 minutes.
+const PACE_START = 1.3, PACE_MIN = 0.8, PACE_MAX = 2.2;
+// What the planner allows per set, rests included, in each hand style: only used to read old history.
+const PLANNED_PER_SET = { pairs: 72, heavy: 102, pump: 67, circuit: 70 }; // measured over a few hundred dealt hands
+export function paceOf(state) {
+  if (state.pace) return state.pace;
+  // Nothing learned yet: read it off the full hands already in the history, taking the middle one.
+  const seen = (state.history ?? [])
+    .filter(h => h.mode === 'full' && h.sets >= 6 && h.minutes)
+    .slice(0, 5)
+    .map(h => h.minutes * 60 / (h.sets * (PLANNED_PER_SET[h.style] ?? 70)))
+    .filter(r => r > 0.5 && r < 3)
+    .sort((a, b) => a - b);
+  const mid = (seen[Math.floor((seen.length - 1) / 2)] + seen[Math.floor(seen.length / 2)]) / 2;
+  return seen.length ? clamp(mid, PACE_MIN, PACE_MAX) : PACE_START;
+}
+// A finished hand teaches the pace: the minutes it took against the minutes planned for the sets done.
+function learnPace(state, hand, sets, minutes) {
+  const planned = (hand.estRaw ?? hand.estMin) * sets / Math.max(1, hand.steps.length);
+  if (sets < 4 || !minutes || !planned) return;
+  const seen = minutes / planned;
+  if (seen < 0.5 || seen > 3) return; // a hand left open over lunch says nothing about pace
+  state.pace = Math.round(clamp(paceOf(state) * 0.6 + seen * 0.4, PACE_MIN, PACE_MAX) * 100) / 100;
+}
+
+function estimate(hand, quickChange, pace = 1) {
   let sec = 0, changes = 0;
   hand.steps.forEach((s, i) => {
     const c = hand.blocks[s.b].cards[s.c];
@@ -647,7 +673,8 @@ function estimate(hand, quickChange) {
     if (change != null) { changes++; if (quickChange) sec += 10; }
   });
   hand.changes = changes;
-  hand.estMin = Math.round(sec / 60);
+  hand.estRaw = Math.round(sec / 6) / 10; // the planner's own sum, before this player's pace
+  hand.estMin = Math.round(sec * pace / 60);
   return hand.estMin;
 }
 
@@ -663,7 +690,7 @@ function buildHand(state, opts, rng, now) {
   if (boss) blocks.push(boss);
   const hand = { mode, style, base, blocks, i: 0, done: false, startedAt: null };
   buildSteps(hand);
-  estimate(hand, quick);
+  estimate(hand, quick, opts.pace);
   return hand;
 }
 
@@ -693,18 +720,22 @@ export function dealHand(state, mode, rng, now, avoid = []) {
   const wild = !season.def.range;
   const raw = season.def.range ?? pick(rng, WILD_RANGES);
   const base = [Math.max(5, raw[0] + st.shift), Math.max(8, raw[1] + st.shift)];
-  const sizes = mode === 'quick' ? [2] : style === 'heavy' ? [4] : style === 'circuit' ? [6, 5] : style === 'pump' ? [6, 5] : [5, 6, 4];
-  const [lo, hi] = mode === 'quick' ? [6, 12] : [19, 28];
+  const pace = paceOf(state);
+  let sizes = mode === 'quick' ? [2] : style === 'heavy' ? [4] : style === 'circuit' ? [6, 5] : style === 'pump' ? [6, 5] : [5, 6, 4];
+  // A slower pace fits fewer cards into the same half hour, so smaller hands join the running.
+  if (mode !== 'quick' && pace > 1.15) sizes = [...new Set([...sizes, ...sizes.map(n => n - 1), ...sizes.map(n => n - 2)])].filter(n => n >= 3);
+  // A full hand may run 20 to 30 minutes and is steered toward 26, so a slower pace trims a hand rather than halving it.
+  const [lo, hi, aim] = mode === 'quick' ? [6, 13, null] : [20, 30, 26];
   const quick = state.settings.quickChange;
 
   let best = null, bestScore = -Infinity;
   for (let k = 0; k < 30; k++) {
-    const h = buildHand(state, { mode, style, base, n: sizes[k % sizes.length], wild, avoid }, rng, now);
+    const h = buildHand(state, { mode, style, base, n: sizes[k % sizes.length], wild, avoid, pace }, rng, now);
     const cards = handCards(h);
     const paired = h.blocks.filter(b => b.cards.length > 1).reduce((n, b) => n + b.cards.length, 0);
     const novel = cards.filter(c => !state.lifts[c.key]).length;
     const off = h.estMin < lo ? lo - h.estMin : h.estMin > hi ? h.estMin - hi : 0;
-    const score = paired * 3 - h.changes * 2 + novel * 0.5 + rng() - off * 20;
+    const score = paired * 3 - h.changes * 2 + novel * 0.5 + rng() - off * 20 - (aim ? Math.abs(h.estMin - aim) * 1.5 : 0);
     if (score > bestScore) { bestScore = score; best = h; }
   }
   // Still too long: shave a round off the last regular block, then drop it.
@@ -720,7 +751,7 @@ export function dealHand(state, mode, rng, now, avoid = []) {
       best.blocks.splice(best.blocks.indexOf(drop), 1);
     }
     buildSteps(best);
-    estimate(best, quick);
+    estimate(best, quick, pace);
   }
   const tally = {};
   for (const c of handCards(best)) tally[EX[c.ex].suit] = (tally[EX[c.ex].suit] ?? 0) + 1;
@@ -1060,6 +1091,8 @@ export function finishHand(state, hand, rng, now) {
     const perSet = (hand.dmg ?? 0) / sets;
     state.hitAvg = state.hitAvg ? state.hitAvg * 0.6 + perSet * 0.4 : perSet;
   }
+  // And of how many sets a full hand of theirs holds, so a boss lasts as many hands for a slow lifter as for a fast one.
+  if (hand.mode === 'full' && sets >= 6) state.handSets = Math.round((state.handSets ? state.handSets * 0.6 + sets * 0.4 : sets) * 10) / 10;
   const foe = { dmg: hand.dmg ?? 0, downs, points: foePoints, now: { ...foeInfo(state.foe.k), hp: state.foe.hp, max: state.foe.max } };
 
   const season = seasonInfo(state);
@@ -1077,6 +1110,7 @@ export function finishHand(state, hand, rng, now) {
     if (suitGain[s]) levelUps.push({ suit: s, from: before.suits[s], to, gained: suitGain[s] });
   }
   const minutes = hand.startedAt ? Math.max(1, Math.round((now - hand.startedAt) / 60000)) : 0;
+  learnPace(state, hand, sets, minutes);
   const summary = {
     xp, base, mult: hand.mult ?? 1, pointsBonus, iron: hand.iron ?? 0, drops: hand.drops ?? [], sets, kg, minutes, records, levelUps, loot, newSeason, counted, bounty, foe,
     complete: !!hand.done, level: { from: before.level, to: levelFor(state.xp).level },

@@ -913,3 +913,65 @@ test('the calendar lights the days a hand was played, Monday first, and never lo
   assert.deepEqual(c.grid[11].slice(3), [0, 0, 0, 0]);
   assert.equal(calendar(setup(), now).hands, 0);
 });
+
+// ----- pace: a hand is sized to the minutes it really takes -----
+import { paceOf } from '../js/engine.js';
+
+test('a slow lifter gets fewer sets, so the hand still fits half an hour of their time', () => {
+  const sets = (pace) => {
+    let n = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const s = setup();
+      s.pace = pace;
+      const hand = dealHand(s, 'full', mulberry32(seed), T0);
+      assert.ok(hand.estMin >= 18 && hand.estMin <= 30, `pace ${pace}, seed ${seed}: ${hand.estMin} min`);
+      assert.ok(handCards(hand).length >= 3, `pace ${pace}, seed ${seed}: only ${handCards(hand).length} cards`);
+      assert.ok(Math.abs(hand.estMin - hand.estRaw * pace) <= 0.6, 'the minutes shown are the planned minutes at this pace');
+      n += hand.steps.length;
+    }
+    return n / 20;
+  };
+  const brisk = sets(1), slow = sets(1.8);
+  assert.ok(slow < brisk * 0.75, `a pace of 1.8 dealt ${slow} sets against ${brisk}`);
+});
+
+test('pace is learned from finished hands, read off old history, and never from a hand left open', () => {
+  const s = setup();
+  assert.equal(paceOf(s), 1.3); // nothing known yet
+  // an older save: three full hands on record that each ran long
+  s.history = [
+    { mode: 'full', style: 'pairs', sets: 18, minutes: 42 },
+    { mode: 'full', style: 'pairs', sets: 18, minutes: 40 },
+    { mode: 'quick', style: 'pairs', sets: 5, minutes: 9 },
+    { mode: 'full', style: 'pairs', sets: 17, minutes: 44 },
+  ];
+  assert.ok(paceOf(s) > 1.8 && paceOf(s) <= 2.2, `read ${paceOf(s)} off the history`);
+  s.history = [];
+
+  // a hand planned for 20 minutes that takes 36
+  const hand = dealHand(s, 'full', mulberry32(3), T0);
+  const planned = hand.estRaw;
+  play(s, hand, T0);
+  finishHand(s, hand, mulberry32(4), T0 + planned * 1.8 * 60000);
+  assert.ok(s.pace > 1.3 && s.pace < 1.8, `pace moved to ${s.pace}`);
+
+  // a hand started and finished a day later teaches nothing
+  const was = s.pace;
+  const open = dealHand(s, 'full', mulberry32(5), T0 + 2 * DAY);
+  play(s, open, T0 + 2 * DAY);
+  finishHand(s, open, mulberry32(6), T0 + 3 * DAY);
+  assert.equal(s.pace, was);
+});
+
+test('a hand dealt before pace existed still finishes and still teaches the pace', () => {
+  const s = setup();
+  const hand = dealHand(s, 'full', mulberry32(8), T0);
+  const planned = hand.estRaw;
+  delete hand.estRaw;              // as an older version dealt it
+  hand.estMin = Math.round(planned); // back then the minutes shown were the planner's own
+  s.current = hand;
+  play(s, hand, T0);
+  const done = finishHand(s, hand, mulberry32(9), T0 + 41 * 60000);
+  assert.ok(done.sets > 0 && s.hands === 1);
+  assert.ok(s.pace > 1.3, `pace ${s.pace}`);
+});
